@@ -295,7 +295,12 @@ Whoever moves the camera or the hand must move the `HeroAnchor` markers along.
 The bridge looks for them in Forge's image folder (`~/.cache/forge/pics/cards/`) and in
 NeoForge's (`~/Games/NeoForge/datos/cache/pics/cards/`, a different location via the environment
 variable `CLASH_EXTRA_PICS`) and downloads missing ones from Scryfall into Forge's image folder in
-the background (in the first game with a deck the images appear one by one). With an image the
+the background (in the first game with a deck the images appear one by one, the table gets an update
+at least every 0.4 s). Six downloads run at once, straight from Scryfall's CDN (`cards.scryfall.io`,
+no request limit) as soon as Forge's index of the edition (`CdnUuidCache`, one search per ~175 cards,
+kept in Forge's cache) knows the card; until then, and for cards it does not know, through the API
+at Forge's pace (`ScryfallRateLimiter`, 10 requests per second). Measured: 40 new cards in about 2 s
+with the index, 4–5 s for an edition seen for the first time (before: 16–21 s). With an image the
 card hides name, cost, type line and text (they are in the image); power/toughness only if they
 differ from the printed values. A printing with a **normal frame** is always shown: if the
 printing from the deck list is a special printing (Secret Lair, showcase, borderless, comic

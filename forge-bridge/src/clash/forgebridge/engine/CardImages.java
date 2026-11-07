@@ -24,8 +24,10 @@ import forge.card.CardEdition;
 import forge.game.card.Card;
 import forge.item.IPaperCard;
 import forge.item.PaperCard;
+import forge.gui.download.CdnUuidCache;
 import forge.localinstance.properties.ForgeConstants;
 import forge.util.ImageUtil;
+import forge.util.ScryfallRateLimiter;
 
 /**
  * Kartenbilder (JPG) für die 3D-Karten, wie Forge und NeoForge sie benutzen: Scryfall-Bilder
@@ -34,8 +36,9 @@ import forge.util.ImageUtil;
  * <p>Gesucht wird im Bildordner dieser Forge-Installation ({@link ForgeConstants#CACHE_CARD_PICS_DIR})
  * und in dem von NeoForge (Umgebungsvariable {@code CLASH_EXTRA_PICS}, sonst
  * {@code ~/Games/NeoForge/datos/cache/pics/cards}). Fehlt ein Bild, lädt es ein Hintergrund-Thread
- * von Scryfall in den Forge-Bildordner (höchstens ~8 Anfragen je Sekunde, wie Scryfall es
- * verlangt); der nächste Zustand enthält dann den Pfad. Die Bilder gehören Wizards of the Coast
+ * von Scryfall in den Forge-Bildordner – mehrere gleichzeitig, möglichst direkt von der CDN
+ * ({@link #cdnFor}), sonst über die API im Takt von Forges {@link ScryfallRateLimiter}; der
+ * nächste Zustand enthält dann den Pfad. Die Bilder gehören Wizards of the Coast
  * und kommen nie ins Git.
  */
 final class CardImages {
@@ -45,19 +48,33 @@ final class CardImages {
     private static final Map<String, String> FOUND = new ConcurrentHashMap<>();
     /** Schlüssel, deren Download läuft oder fehlschlug (nicht erneut anstoßen). */
     private static final Set<String> REQUESTED = ConcurrentHashMap.newKeySet();
-    private static final ExecutorService DOWNLOADER = Executors.newSingleThreadExecutor(r -> {
+    /**
+     * Mehrere Downloads gleichzeitig: die meisten Bilder kommen von Scryfalls CDN
+     * ({@code cards.scryfall.io}, ohne Limit). Anfragen an die API takten trotzdem über
+     * {@link ScryfallRateLimiter} (dieselbe Uhr wie Forge und NeoForge).
+     */
+    private static final int PARALLEL = 6;
+    private static final ExecutorService DOWNLOADER = Executors.newFixedThreadPool(PARALLEL, r -> {
         Thread t = new Thread(r, "clash-card-images");
         t.setDaemon(true);
         return t;
     });
+    /**
+     * HTTP/1.1 mit eigenen Verbindungen je Download: mit HTTP/2 bündelt der Client alle
+     * parallelen Downloads in EINE Verbindung zur CDN, und jedes Bild brauchte ~0,9 s statt
+     * ~0,3 s (gemessen: 40 Karten 5,8 s gegen 2,1 s).
+     */
     private static final HttpClient HTTP = HttpClient.newBuilder()
+            .version(HttpClient.Version.HTTP_1_1)
             .followRedirects(HttpClient.Redirect.NORMAL)
             .connectTimeout(Duration.ofSeconds(10))
             .build();
     /** Wartende Downloads (für die Zustandsmeldung nach dem letzten). */
     private static final java.util.concurrent.atomic.AtomicInteger QUEUED = new java.util.concurrent.atomic.AtomicInteger();
-    /** Abstand zwischen zwei Scryfall-Anfragen (Millisekunden). */
-    private static final long REQUEST_GAP_MS = 120;
+    /** Zeitpunkt der letzten Zustandsmeldung wegen neuer Bilder (Millisekunden). */
+    private static final java.util.concurrent.atomic.AtomicLong LAST_NOTIFY = new java.util.concurrent.atomic.AtomicLong();
+    /** Bei einer langen Reihe spätestens so oft einen Zwischenstand schicken (Millisekunden). */
+    private static final long NOTIFY_EVERY_MS = 400;
 
     /**
      * Bilder einer Karte: {@code image} = ganzes Kartenbild, {@code art} = Bildausschnitt (Scryfall
@@ -198,13 +215,7 @@ final class CardImages {
             return "";
         }
         File target = new File(ForgeConstants.CACHE_TOKEN_PICS_DIR, file + ".jpg");
-        QUEUED.incrementAndGet();
-        DOWNLOADER.submit(() -> {
-            download(url, target, key);
-            if (QUEUED.decrementAndGet() == 0) {
-                BridgeCore.imagesChanged();
-            }
-        });
+        enqueue(url, target, key);
         return "";
     }
 
@@ -289,21 +300,38 @@ final class CardImages {
             File target = new File(ForgeConstants.CACHE_CARD_PICS_DIR, (art ? artcrop(rel) : fullborder(rel)) + ".jpg");
             String url;
             try {
+                // Scryfalls Set-Code (weicht bei manchen Editionen von Forges Code ab); ohne
+                // Edition wie bisher Forges Code
+                CardEdition ed = StaticData.instance().getCardEdition(pc.getEdition());
+                String scryfall = ed == null ? null : ed.getScryfallCode();
                 url = ForgeConstants.URL_PIC_SCRYFALL_DOWNLOAD
-                        + ImageUtil.getScryfallDownloadUrl(pc, face.isEmpty() ? "front" : face, null, "en", art);
+                        + ImageUtil.getScryfallDownloadUrl(pc, face.isEmpty() ? "front" : face, scryfall, "en", art);
             } catch (RuntimeException e) {
                 return "";
             }
-            QUEUED.incrementAndGet();
-            DOWNLOADER.submit(() -> {
-                download(url, target, key);
-                // nach dem letzten Bild einer Reihe einmal den neuen Zustand schicken
-                if (QUEUED.decrementAndGet() == 0) {
-                    BridgeCore.imagesChanged();
-                }
-            });
+            enqueue(url, target, key);
         }
         return "";
+    }
+
+    /** Download in die Warteschlange; danach (gedrosselt) den neuen Zustand an die UI schicken. */
+    private static void enqueue(String url, File target, String key) {
+        QUEUED.incrementAndGet();
+        DOWNLOADER.submit(() -> {
+            boolean ok = download(url, target, key);
+            int left = QUEUED.decrementAndGet();
+            // nach dem letzten Bild einer Reihe immer; bei langen Reihen zusätzlich alle
+            // NOTIFY_EVERY_MS, damit die Bilder nach und nach erscheinen statt alle am Schluss
+            long now = System.currentTimeMillis();
+            long last = LAST_NOTIFY.get();
+            if (left == 0) {
+                // immer: ein paralleler Zwischenstand kann vor dem letzten Bild entstanden sein
+                LAST_NOTIFY.set(now);
+                BridgeCore.imagesChanged();
+            } else if (ok && now - last >= NOTIFY_EVERY_MS && LAST_NOTIFY.compareAndSet(last, now)) {
+                BridgeCore.imagesChanged();
+            }
+        });
     }
 
     /** „SET/Name.full“ → „SET/Name.artcrop“ (Bildausschnitt, Name wie bei NeoForge). */
@@ -341,9 +369,28 @@ final class CardImages {
         return out;
     }
 
-    private static void download(String url, File target, String key) {
+    /**
+     * Lädt das Bild der API-Adresse {@code url} nach {@code target}: zuerst direkt von der CDN,
+     * wenn Forges Index der Edition die Karte kennt ({@link #cdnFor}), sonst über die API im
+     * Takt von {@link ScryfallRateLimiter} (10 Anfragen je Sekunde, mit Pause nach einem 429).
+     *
+     * @return ob das Bild jetzt da ist
+     */
+    private static boolean download(String url, File target, String key) {
+        String cdn = cdnFor(url);
+        if (cdn != null && fetch(cdn, target, key)) {
+            return true;
+        }
+        if (ScryfallRateLimiter.shouldSkip(url)) {
+            return false;
+        }
+        ScryfallRateLimiter.acquire(url);
+        return fetch(url, target, key);
+    }
+
+    /** Eine Adresse in eine Datei (über eine Teildatei, damit nie ein halbes Bild gelesen wird). */
+    private static boolean fetch(String url, File target, String key) {
         try {
-            Thread.sleep(REQUEST_GAP_MS);
             HttpRequest req = HttpRequest.newBuilder(URI.create(url))
                     .timeout(Duration.ofSeconds(30))
                     .header("User-Agent", "MTGClash/0.1 (Forge bridge)")
@@ -353,8 +400,10 @@ final class CardImages {
             HttpResponse<InputStream> resp = HTTP.send(req, HttpResponse.BodyHandlers.ofInputStream());
             if (resp.statusCode() != 200) {
                 resp.body().close();
+                ScryfallRateLimiter.noteIfRateLimited(resp.statusCode(), url,
+                        resp.headers().firstValue("Retry-After").orElse(null));
                 System.err.println("Kartenbild nicht ladbar (" + resp.statusCode() + "): " + url);
-                return;
+                return false;
             }
             Files.createDirectories(target.getParentFile().toPath());
             Path tmp = Files.createTempFile(target.getParentFile().toPath(), "dl", ".part");
@@ -363,10 +412,51 @@ final class CardImages {
             }
             Files.move(tmp, target.toPath(), StandardCopyOption.REPLACE_EXISTING);
             FOUND.put(key, target.getAbsolutePath());
+            return true;
         } catch (IOException e) {
             System.err.println("Kartenbild-Download fehlgeschlagen: " + url + " – " + e.getMessage());
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
+        }
+        return false;
+    }
+
+    /**
+     * Die CDN-Adresse ({@code cards.scryfall.io}, ohne Anfrage-Limit) zur API-Bildadresse
+     * {@code .../cards/<set>/<nr>/<sprache>?format=image&version=<größe>[&face=back]}, aus Forges
+     * {@link CdnUuidCache}; sonst null. Kennt Forge die Edition noch nicht, holt
+     * {@code getCdnUrl} ihren Index im Hintergrund (eine Suche je ~175 Karten statt einer Anfrage
+     * je Bild): die ersten Bilder kommen dann noch über die API, die folgenden von der CDN. Der
+     * Index liegt danach in Forges Cache und gilt auch beim nächsten Start.
+     */
+    static String cdnFor(String apiUrl) {
+        String prefix = ForgeConstants.URL_PIC_SCRYFALL_DOWNLOAD;
+        int q = apiUrl == null ? -1 : apiUrl.indexOf('?');
+        if (q < 0 || !apiUrl.startsWith(prefix) || !apiUrl.contains("format=image")) {
+            return null;
+        }
+        String[] parts = apiUrl.substring(prefix.length(), q).split("/", -1);
+        if (parts.length < 2 || parts[0].isEmpty() || parts[1].isEmpty()) {
+            return null;
+        }
+        String lang = parts.length > 2 && !parts[2].isEmpty() ? parts[2] : "en";
+        String size = "normal";
+        String face = "front";
+        for (String p : apiUrl.substring(q + 1).split("&")) {
+            if (p.startsWith("version=")) {
+                size = p.substring("version=".length());
+            } else if (p.equals("face=back")) {
+                face = "back";
+            }
+        }
+        if (!size.equals("normal") && !size.equals("art_crop")) {
+            return null;
+        }
+        try {
+            return CdnUuidCache.getCdnUrl(parts[0], java.net.URLDecoder.decode(parts[1],
+                    java.nio.charset.StandardCharsets.UTF_8), lang, face, size);
+        } catch (RuntimeException e) {
+            return null;
         }
     }
 }

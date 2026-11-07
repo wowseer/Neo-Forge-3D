@@ -310,7 +310,8 @@ prepared – Prepare: a copy of its spell can be cast), `unlocked_doors` (rooms:
 unlocked doors), `image` (absolute path of the card image, a Scryfall JPG in Forge's image folder
 `pics/cards/<SET>/<Name>.fullborder.jpg` or in NeoForge's image folder; if it is missing, the
 bridge downloads it from Scryfall in the background – `CardImages.java` – and on its own sends a
-`state` message with the paths after the last image of a batch is done; never for face-down cards
+`state` message with the paths after the last image of a batch is done, during a long batch also at
+most every 0.4 s with the images that have arrived so far; never for face-down cards
 and tokens; for the image the bridge picks a printing with a normal frame, see DOCUMENTATION.md),
 `crop` (path of the image crop, always – for the tiles on the battlefield), `art` (only for cards
 without a normal-frame printing: path of the image crop `<SET>/<Name>.artcrop.jpg`, Scryfall

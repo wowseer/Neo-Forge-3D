@@ -216,6 +216,445 @@ index 5d6b06c..ecd4224 100644
          } else {
              rankBadge.setVisible(false);
              rankBadge.pseudoClassStateChanged(RANK_GOOD, false);
+diff --git a/forge-gui-neo/src/main/java/forge/neo/card/ScryfallCdn.java b/forge-gui-neo/src/main/java/forge/neo/card/ScryfallCdn.java
+new file mode 100644
+index 0000000..85bbd56
+--- /dev/null
++++ b/forge-gui-neo/src/main/java/forge/neo/card/ScryfallCdn.java
+@@ -0,0 +1,433 @@
++package forge.neo.card;
++
++import java.io.BufferedReader;
++import java.io.BufferedWriter;
++import java.io.File;
++import java.io.IOException;
++import java.io.InputStream;
++import java.io.InputStreamReader;
++import java.net.HttpURLConnection;
++import java.net.URL;
++import java.net.URLDecoder;
++import java.net.URLEncoder;
++import java.nio.charset.StandardCharsets;
++import java.nio.file.Files;
++import java.nio.file.StandardCopyOption;
++import java.util.HashMap;
++import java.util.LinkedHashSet;
++import java.util.Map;
++import java.util.Set;
++import java.util.concurrent.ConcurrentHashMap;
++import java.util.concurrent.ExecutorService;
++import java.util.concurrent.Executors;
++import java.util.zip.GZIPInputStream;
++
++import com.google.gson.JsonArray;
++import com.google.gson.JsonElement;
++import com.google.gson.JsonObject;
++import com.google.gson.JsonParser;
++
++import forge.localinstance.properties.ForgeConstants;
++import forge.util.ScryfallRateLimiter;
++
++/**
++ * Neo Forge 3D: Kartenbilder direkt von Scryfalls CDN statt ueber die API.
++ *
++ * <h2>Warum</h2>
++ *
++ * <p>Jedes Bild war eine Anfrage an {@code api.scryfall.com/cards/<set>/<nr>/<sprache>?format=image},
++ * die nur auf das eigentliche Bild auf {@code cards.scryfall.io} weiterleitet. Die API ist
++ * auf zehn Anfragen pro Sekunde begrenzt ({@link ScryfallRateLimiter}), und mit deutschem
++ * Arte kam bei jeder Karte ohne deutschen Druck noch eine vergebliche Anfrage dazu. Ein frischer
++ * Booster brauchte so ~2 s, ein Deck mit 40 neuen Karten entsprechend laenger. Die CDN hat
++ * kein Limit — man muss nur die Scryfall-ID jedes Drucks kennen.
++ *
++ * <h2>Wie</h2>
++ *
++ * <p>Die IDs kommen <b>pro Edition</b> aus der Suche
++ * ({@code /cards/search?q=set:X (lang:en or lang:de)}): 175 Karten je Seite, eine Edition in
++ * ein bis fuenf Anfragen statt einer je Karte. Der Index liegt danach in
++ * {@code cache/neo-cdn/<set>.txt} und gilt auch beim naechsten Start. Dasselbe macht Forge mit
++ * {@code CdnUuidCache}/{@code ScryfallSetSync}, aber dort nur fuer Englisch plus
++ * {@code UI_CARD_DOWNLOAD_LANG}, und im Spiel wird der Index nie angelegt — nur gelesen.
++ *
++ * <p><b>Nie langsamer als vorher:</b> Ist der Index einer Edition noch nicht da, antwortet
++ * {@link #cdnFor} sofort mit {@code null} (der Aufrufer nimmt die API wie bisher) und stoesst
++ * das Laden im Hintergrund an. Ab dann laufen die Bilder dieser Edition ueber die CDN.
++ */
++public final class ScryfallCdn {
++
++    private ScryfallCdn() {
++    }
++
++    /** {@code -Dneo.images.debug=true} zeigt auch, was hier passiert. */
++    private static final boolean DEBUG = Boolean.getBoolean("neo.images.debug");
++
++    private static final String API_PREFIX = ForgeConstants.URL_PIC_SCRYFALL_DOWNLOAD;
++    private static final String SEARCH = "https://api.scryfall.com/cards/search";
++    /** Ein vollstaendiger Index, dem eine Karte fehlt, wird nach so langer Zeit neu geholt (neue Vorschauen). */
++    private static final long STALE_MS = 24L * 60 * 60 * 1000;
++    /** Nach einem Fehlschlag (kein Netz) so lange nicht erneut versuchen. */
++    private static final long RETRY_FAILED_MS = 2L * 60 * 1000;
++
++    /** Index einer Edition: "nr|sprache" -> {vorne, hinten}. */
++    private static final class Index {
++        final Map<String, String[]> uuids = new HashMap<>();
++        /** Alle Nummern, die in irgendeiner Sprache vorkommen. */
++        final Set<String> numbers = new java.util.HashSet<>();
++        final Set<String> langs = new LinkedHashSet<>();
++        long fetchedAt;
++    }
++
++    private static final Map<String, Index> LOADED = new ConcurrentHashMap<>();
++    /** Editionen, fuer die schon geschaut wurde, ob ein Index auf der Platte liegt. */
++    private static final Set<String> DISK_CHECKED = ConcurrentHashMap.newKeySet();
++    private static final Set<String> SYNCING = ConcurrentHashMap.newKeySet();
++    /** Editionen, deren veralteter Index in dieser Sitzung schon neu geholt wurde. */
++    private static final Set<String> REFRESHED = ConcurrentHashMap.newKeySet();
++    private static final Map<String, Long> FAILED = new ConcurrentHashMap<>();
++
++    /** Ein Thread: die Suche ist ohnehin auf zwei Anfragen pro Sekunde begrenzt. */
++    private static final ExecutorService SYNC = Executors.newSingleThreadExecutor(r -> {
++        final Thread t = new Thread(r, "neo-cdn-index");
++        t.setDaemon(true);
++        return t;
++    });
++
++    /** Eine zerlegte API-Bildadresse. */
++    private record Request(String set, String number, String lang, String size, String ext, boolean back) {
++    }
++
++    /**
++     * Die CDN-Adresse fuer diese API-Bildadresse, oder {@code null}: dann bleibt es bei der API.
++     * Wartet nie; fehlt der Index der Edition, wird er im Hintergrund geholt.
++     */
++    public static String cdnFor(final String apiUrl) {
++        final Request r = parse(apiUrl);
++        if (r == null) {
++            return null;
++        }
++        final Index index = index(r);
++        if (index == null) {
++            return null;
++        }
++        final String[] ids = index.uuids.get(r.number + "|" + r.lang);
++        if (ids == null) {
++            maybeRefresh(r, index);
++            return null;
++        }
++        final String uuid = r.back ? ids[1] : ids[0];
++        if (uuid == null || uuid.length() < 2) {
++            return null;
++        }
++        return ForgeConstants.URL_SCRYFALL_CDN + r.size + "/" + (r.back ? "back" : "front") + "/"
++                + uuid.charAt(0) + "/" + uuid.charAt(1) + "/" + uuid + "." + r.ext;
++    }
++
++    /**
++     * Ob der Index sicher sagt, dass es diese Karte in dieser Sprache NICHT gibt: die Edition
++     * ist geladen, mit dieser Sprache, und die Nummer steht drin — nur nicht in dieser Sprache.
++     * Dann kann die Anfrage nach der Uebersetzung entfallen. Im Zweifel {@code false}.
++     */
++    public static boolean knownAbsent(final String apiUrl) {
++        final Request r = parse(apiUrl);
++        if (r == null) {
++            return false;
++        }
++        final Index index = index(r);
++        if (index == null || !index.langs.contains(r.lang) || !index.numbers.contains(r.number)) {
++            return false;
++        }
++        return !index.uuids.containsKey(r.number + "|" + r.lang);
++    }
++
++    // ------------------------------------------------------------------
++    // Zerlegen: ".../cards/<set>/<nr>/<sprache>?format=image&version=normal&face=back"
++
++    private static Request parse(final String url) {
++        if (url == null || !url.startsWith(API_PREFIX)) {
++            return null;
++        }
++        final int q = url.indexOf('?');
++        if (q < 0) {
++            return null;
++        }
++        final String query = url.substring(q + 1);
++        if (!query.contains("format=image")) {
++            return null;
++        }
++        final String[] parts = url.substring(API_PREFIX.length(), q).split("/", -1);
++        if (parts.length < 2 || parts[0].isEmpty() || parts[1].isEmpty()) {
++            return null;
++        }
++        final String set = parts[0].toLowerCase(java.util.Locale.ROOT);
++        final String number = URLDecoder.decode(parts[1], StandardCharsets.UTF_8);
++        String lang = parts.length > 2 ? parts[2].toLowerCase(java.util.Locale.ROOT) : "";
++        if (lang.isEmpty()) {
++            lang = "en";
++        }
++        // Ohne version liefert Scryfall "large".
++        String size = "large";
++        boolean back = false;
++        for (final String p : query.split("&")) {
++            if (p.startsWith("version=")) {
++                size = p.substring("version=".length());
++            } else if (p.equals("face=back")) {
++                back = true;
++            }
++        }
++        if (!size.matches("small|normal|large|png|art_crop|border_crop")) {
++            return null;
++        }
++        return new Request(set, number, lang, size, "png".equals(size) ? "png" : "jpg", back);
++    }
++
++    // ------------------------------------------------------------------
++    // Index: Speicher, Platte, Scryfall
++
++    /** Der Index der Edition, wenn er schon da ist und diese Sprache kennt; sonst wird er geholt. */
++    private static Index index(final Request r) {
++        Index index = LOADED.get(r.set);
++        if (index == null && !DISK_CHECKED.contains(r.set)) {
++            // Synchronisiert: laeuft ein zweiter Download-Thread derselben Edition hier
++            // durch, soll er auf die Platte warten statt eine Suche bei Scryfall anzustossen.
++            synchronized (DISK_CHECKED) {
++                index = LOADED.get(r.set);
++                if (index == null && DISK_CHECKED.add(r.set)) {
++                    index = readDisk(r.set);
++                    if (index != null) {
++                        LOADED.put(r.set, index);
++                    }
++                }
++            }
++        }
++        if (index == null || !index.langs.contains(r.lang)) {
++            queueSync(r.set, wantedLangs(index, r.lang));
++            return index;
++        }
++        return index;
++    }
++
++    /** Englisch (der Rueckfall), die Sprache des Spiels und die gefragte. */
++    private static Set<String> wantedLangs(final Index have, final String asked) {
++        final Set<String> langs = new LinkedHashSet<>();
++        langs.add("en");
++        final String ui = CardArt.language();
++        if (ui != null) {
++            langs.add(ui.toLowerCase(java.util.Locale.ROOT));
++        }
++        langs.add(asked);
++        if (have != null) {
++            langs.addAll(have.langs);
++        }
++        return langs;
++    }
++
++    /** Fehlt einer Karte der Eintrag und ist der Index alt: einmal je Sitzung neu holen. */
++    private static void maybeRefresh(final Request r, final Index index) {
++        if (System.currentTimeMillis() - index.fetchedAt > STALE_MS && REFRESHED.add(r.set)) {
++            queueSync(r.set, wantedLangs(index, r.lang));
++        }
++    }
++
++    private static void queueSync(final String set, final Set<String> langs) {
++        final Long failedAt = FAILED.get(set);
++        if (failedAt != null && System.currentTimeMillis() - failedAt < RETRY_FAILED_MS) {
++            return;
++        }
++        if (ScryfallRateLimiter.isCoolingDown() || !SYNCING.add(set)) {
++            return;
++        }
++        SYNC.submit(() -> {
++            try {
++                final Index fresh = fetch(set, langs);
++                if (fresh == null) {
++                    FAILED.put(set, System.currentTimeMillis());
++                } else {
++                    LOADED.put(set, fresh);
++                    FAILED.remove(set);
++                    writeDisk(set, fresh);
++                    if (DEBUG) {
++                        System.out.println("[neo-cdn] " + set + " " + fresh.langs + ": "
++                                + fresh.uuids.size() + " Bilder im Index");
++                    }
++                }
++            } catch (final RuntimeException e) {
++                FAILED.put(set, System.currentTimeMillis());
++                System.err.println("[neo-cdn] Index fuer " + set + " fehlgeschlagen: " + e);
++            } finally {
++                SYNCING.remove(set);
++            }
++        });
++    }
++
++    /** Alle Drucke der Edition in diesen Sprachen, oder {@code null} bei einem Fehler. */
++    private static Index fetch(final String set, final Set<String> langs) {
++        final StringBuilder q = new StringBuilder("set:").append(set).append(" (");
++        boolean first = true;
++        for (final String l : langs) {
++            q.append(first ? "" : " or ").append("lang:").append(l);
++            first = false;
++        }
++        q.append(')');
++        String url = SEARCH + "?unique=prints&include_extras=true&include_variations=true&q="
++                + URLEncoder.encode(q.toString(), StandardCharsets.UTF_8);
++        final Index index = new Index();
++        index.langs.addAll(langs);
++        index.fetchedAt = System.currentTimeMillis();
++        try {
++            while (url != null) {
++                if (ScryfallRateLimiter.isCoolingDown()) {
++                    return null;
++                }
++                ScryfallRateLimiter.acquire(url);
++                final HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
++                c.setConnectTimeout(10_000);
++                c.setReadTimeout(20_000);
++                c.setRequestProperty("Accept", "application/json");
++                c.setRequestProperty("Accept-Encoding", "gzip");
++                c.setRequestProperty("User-Agent", forge.neo.platform.NeoUserAgent.get());
++                final int code = c.getResponseCode();
++                ScryfallRateLimiter.noteIfRateLimited(code, url, c.getHeaderField("Retry-After"));
++                if (code == 404) {
++                    // Keine Karte in diesen Sprachen: ein leerer, aber vollstaendiger Index.
++                    c.disconnect();
++                    break;
++                }
++                if (code != 200) {
++                    c.disconnect();
++                    return null;
++                }
++                final JsonObject page;
++                try (InputStream raw = c.getInputStream();
++                     InputStream in = "gzip".equalsIgnoreCase(c.getContentEncoding())
++                             ? new GZIPInputStream(raw) : raw) {
++                    page = JsonParser.parseReader(new InputStreamReader(in, StandardCharsets.UTF_8))
++                            .getAsJsonObject();
++                }
++                final JsonArray data = page.has("data") ? page.getAsJsonArray("data") : new JsonArray();
++                for (final JsonElement el : data) {
++                    add(index, el.getAsJsonObject());
++                }
++                url = page.has("has_more") && page.get("has_more").getAsBoolean() && page.has("next_page")
++                        ? page.get("next_page").getAsString() : null;
++            }
++        } catch (final IOException | RuntimeException e) {
++            if (DEBUG) {
++                System.out.println("[neo-cdn] " + set + ": " + e);
++            }
++            return null;
++        }
++        return index;
++    }
++
++    private static void add(final Index index, final JsonObject card) {
++        final String number = str(card, "collector_number");
++        final String lang = str(card, "lang");
++        final String status = str(card, "image_status");
++        if (number == null || lang == null || "missing".equals(status) || "placeholder".equals(status)) {
++            return;
++        }
++        String front = null;
++        String back = null;
++        if (card.has("image_uris") && card.get("image_uris").isJsonObject()) {
++            front = uuidOf(card.getAsJsonObject("image_uris"));
++        } else if (card.has("card_faces") && card.get("card_faces").isJsonArray()) {
++            final JsonArray faces = card.getAsJsonArray("card_faces");
++            if (!faces.isEmpty() && faces.get(0).isJsonObject()
++                    && faces.get(0).getAsJsonObject().has("image_uris")) {
++                front = uuidOf(faces.get(0).getAsJsonObject().getAsJsonObject("image_uris"));
++            }
++            if (faces.size() > 1 && faces.get(1).isJsonObject()
++                    && faces.get(1).getAsJsonObject().has("image_uris")) {
++                back = uuidOf(faces.get(1).getAsJsonObject().getAsJsonObject("image_uris"));
++            }
++        }
++        if (front == null) {
++            return;
++        }
++        index.uuids.put(number + "|" + lang, new String[] {front, back});
++        index.numbers.add(number);
++    }
++
++    /** Die ID aus ".../normal/front/a/b/<id>.jpg?123", oder null, wenn es keine CDN-Adresse ist. */
++    private static String uuidOf(final JsonObject imageUris) {
++        final String url = imageUris.has("normal") ? imageUris.get("normal").getAsString() : null;
++        if (url == null || !url.contains("cards.scryfall.io")) {
++            return null;
++        }
++        final int q = url.indexOf('?');
++        final String path = q >= 0 ? url.substring(0, q) : url;
++        final String file = path.substring(path.lastIndexOf('/') + 1);
++        final int dot = file.lastIndexOf('.');
++        return dot > 0 ? file.substring(0, dot) : null;
++    }
++
++    private static String str(final JsonObject o, final String key) {
++        return o.has(key) && !o.get(key).isJsonNull() ? o.get(key).getAsString() : null;
++    }
++
++    // ------------------------------------------------------------------
++    // Platte: "# langs=en,de" / "# fetched=<ms>" / "nr<TAB>sprache<TAB>vorne<TAB>hinten|-"
++
++    private static File fileOf(final String set) {
++        return new File(ForgeConstants.CACHE_DIR, "neo-cdn" + File.separator
++                + set.replaceAll("[^a-z0-9_-]", "_") + ".txt");
++    }
++
++    private static Index readDisk(final String set) {
++        final File f = fileOf(set);
++        if (!f.isFile()) {
++            return null;
++        }
++        final Index index = new Index();
++        try (BufferedReader in = Files.newBufferedReader(f.toPath(), StandardCharsets.UTF_8)) {
++            String line;
++            while ((line = in.readLine()) != null) {
++                if (line.startsWith("# langs=")) {
++                    for (final String l : line.substring("# langs=".length()).split(",")) {
++                        if (!l.isBlank()) {
++                            index.langs.add(l.trim());
++                        }
++                    }
++                } else if (line.startsWith("# fetched=")) {
++                    index.fetchedAt = Long.parseLong(line.substring("# fetched=".length()).trim());
++                } else if (!line.isEmpty() && !line.startsWith("#")) {
++                    final String[] p = line.split("\t");
++                    if (p.length >= 3) {
++                        index.uuids.put(p[0] + "|" + p[1],
++                                new String[] {p[2], p.length > 3 && !"-".equals(p[3]) ? p[3] : null});
++                        index.numbers.add(p[0]);
++                    }
++                }
++            }
++        } catch (final IOException | RuntimeException e) {
++            return null;
++        }
++        return index.langs.isEmpty() ? null : index;
++    }
++
++    private static void writeDisk(final String set, final Index index) {
++        final File f = fileOf(set);
++        try {
++            Files.createDirectories(f.getParentFile().toPath());
++            final File tmp = new File(f.getPath() + ".tmp");
++            try (BufferedWriter out = Files.newBufferedWriter(tmp.toPath(), StandardCharsets.UTF_8)) {
++                out.write("# langs=" + String.join(",", index.langs));
++                out.newLine();
++                out.write("# fetched=" + index.fetchedAt);
++                out.newLine();
++                for (final Map.Entry<String, String[]> e : index.uuids.entrySet()) {
++                    final int bar = e.getKey().lastIndexOf('|');
++                    out.write(e.getKey().substring(0, bar) + "\t" + e.getKey().substring(bar + 1) + "\t"
++                            + e.getValue()[0] + "\t" + (e.getValue()[1] == null ? "-" : e.getValue()[1]));
++                    out.newLine();
++                }
++            }
++            Files.move(tmp.toPath(), f.toPath(), StandardCopyOption.REPLACE_EXISTING,
++                    StandardCopyOption.ATOMIC_MOVE);
++        } catch (final IOException | RuntimeException e) {
++            System.err.println("[neo-cdn] Index fuer " + set + " nicht gespeichert: " + e);
++        }
++    }
++}
 diff --git a/forge-gui-neo/src/main/java/forge/neo/deck/DeckContext.java b/forge-gui-neo/src/main/java/forge/neo/deck/DeckContext.java
 index 62832fc..8347b37 100644
 --- a/forge-gui-neo/src/main/java/forge/neo/deck/DeckContext.java
@@ -426,6 +865,91 @@ index add98cb..da9fcf7 100644
              final Guarded safe = new Guarded(game, p, p.getLobbyPlayer());
              // El perfil que el motor deduce del mazo se recalcula, no se
              // hereda: el campo es privado y su fuente — el mazo — sigue a mano.
+diff --git a/forge-gui-neo/src/main/java/forge/neo/platform/NeoImageFetcher.java b/forge-gui-neo/src/main/java/forge/neo/platform/NeoImageFetcher.java
+index e7738d9..995904b 100644
+--- a/forge-gui-neo/src/main/java/forge/neo/platform/NeoImageFetcher.java
++++ b/forge-gui-neo/src/main/java/forge/neo/platform/NeoImageFetcher.java
+@@ -194,16 +194,31 @@ public class NeoImageFetcher extends ImageFetcher {
+ 
+         ThreadUtil.getServicePool().submit(() -> {
+             boolean ok = false;
+-            try {
+-                ok = doFetch(url, dest.getPath(), null);
+-            } catch (final IOException e) {
++            // Neo Forge 3D: nur eine ANTWORT von Scryfall sagt, dass es die Karte in
++            // dieser Sprache nicht gibt. Ein Netzfehler (kein DNS, kein WLAN) sagt
++            // nichts — frueher wurde die Uebersetzung dann fuer immer als fehlend
++            // vermerkt, und die Karte blieb englisch.
++            boolean answered = true;
++            if (forge.neo.card.ScryfallCdn.knownAbsent(url)) {
++                // Neo Forge 3D: der Index der Edition kennt die Karte, aber nicht in
++                // dieser Sprache — die Anfrage (eine 404 im Takt der API) entfaellt.
+                 if (DEBUG) {
+-                    System.out.println("[neo-img] " + lang + ": fallo " + url + " -> " + e);
++                    System.out.println("[neo-img] " + lang + ": laut Index nicht vorhanden " + filename);
++                }
++            } else {
++                try {
++                    ok = doFetch(url, dest.getPath(), null);
++                } catch (final IOException e) {
++                    answered = false;
++                    if (DEBUG) {
++                        System.out.println("[neo-img] " + lang + ": fallo " + url + " -> " + e);
++                    }
++                } catch (final RuntimeException e) {
++                    answered = false;
++                    System.err.println("[neo-img] error pidiendo " + url + ": " + e);
+                 }
+-            } catch (final RuntimeException e) {
+-                System.err.println("[neo-img] error pidiendo " + url + ": " + e);
+             }
+-            if (!ok && !ScryfallRateLimiter.isCoolingDown()) {
++            if (!ok && answered && !ScryfallRateLimiter.isCoolingDown()) {
+                 // Que una carta no exista en este idioma es lo normal, no un
+                 // error. Se anota para no volver a preguntarlo cada arranque —
+                 // pero NO si lo que ha pasado es que nos han cortado, porque
+@@ -277,9 +292,6 @@ public class NeoImageFetcher extends ImageFetcher {
+         if (disableHostedDownload && urlToDownload.startsWith(ForgeConstants.URL_CARDFORGE)) {
+             return false;
+         }
+-        if (ScryfallRateLimiter.shouldSkip(urlToDownload)) {
+-            return false;
+-        }
+ 
+         // Scryfall sirve las cartas con borde completo; Forge nombra ese fichero
+         // .fullborder.jpg en vez de .full.jpg.
+@@ -289,6 +301,31 @@ public class NeoImageFetcher extends ImageFetcher {
+             destination = TextUtil.fastReplace(destination, ".full.jpg", ".fullborder.jpg");
+         }
+ 
++        // Neo Forge 3D: zuerst direkt von der CDN (cards.scryfall.io, ohne Limit),
++        // wenn der Index der Edition die ID kennt — auch waehrend Scryfall die API
++        // gerade sperrt. Klappt das nicht, geht es wie bisher ueber die API.
++        final String cdn = forge.neo.card.ScryfallCdn.cdnFor(urlToDownload);
++        if (cdn != null) {
++            try {
++                if (download(cdn, destination, notifyObservers)) {
++                    return true;
++                }
++            } catch (final IOException e) {
++                if (DEBUG) {
++                    System.out.println("[neo-img] CDN fehlgeschlagen " + cdn + ": " + e);
++                }
++            }
++        }
++
++        if (ScryfallRateLimiter.shouldSkip(urlToDownload)) {
++            return false;
++        }
++        return download(urlToDownload, destination, notifyObservers);
++    }
++
++    /** Eine Adresse in eine Datei; die API-Anfragen ueber Forges Takt ({@link ScryfallRateLimiter}). */
++    private boolean download(final String urlToDownload, final String destination,
++                             final Runnable notifyObservers) throws IOException {
+         final URL url = new URL(urlToDownload);
+         ScryfallRateLimiter.acquire(urlToDownload);
+ 
 diff --git a/forge-gui-neo/src/main/java/forge/neo/ui/DeckBuilderScreen.java b/forge-gui-neo/src/main/java/forge/neo/ui/DeckBuilderScreen.java
 index f94399d..41c5e03 100644
 --- a/forge-gui-neo/src/main/java/forge/neo/ui/DeckBuilderScreen.java
