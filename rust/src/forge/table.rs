@@ -3924,6 +3924,16 @@ impl ForgeTable {
     /// Tisch) – wie in Arena die Embleme (Monarch, Initiative …) in einer Reihe, die Marken als
     /// Plaketten darunter – und neue bzw. geänderte kurz aufspringen lassen.
     fn update_seat_tokens(&mut self, dt: f32) {
+        // eine Bühne deckt den Tisch ab: Kennzeichen und Marken ausblenden (wie die Medaillons)
+        let covered = self.stage_covers();
+        for (_, _, sprite, _) in self.seat_tokens.iter_mut().flatten() {
+            if sprite.is_visible() == covered {
+                sprite.set_visible(!covered);
+            }
+        }
+        if covered {
+            return;
+        }
         let Some(vp) = self.base().get_viewport() else { return };
         let Some(cam) = vp.get_camera_3d() else { return };
         let px = vp.get_visible_rect().size.y / 1080.0;
