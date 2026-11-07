@@ -1,3 +1,18 @@
+diff --git a/forge-gui-neo/src/main/java/forge/neo/NeoApp.java b/forge-gui-neo/src/main/java/forge/neo/NeoApp.java
+index 55a68ca..89cbe1f 100644
+--- a/forge-gui-neo/src/main/java/forge/neo/NeoApp.java
++++ b/forge-gui-neo/src/main/java/forge/neo/NeoApp.java
+@@ -3991,6 +3991,10 @@ public class NeoApp extends Application implements SettingsPanel.Host {
+         if (draftScreen != null && draftScreen.getScene() != null) {
+             draftScreen.refreshRanking();
+         }
++        // Neo Forge 3D: die Bewertung gibt es auch beim Deckbau nach Draft/Sealed.
++        if (builder != null && builder.getScene() != null) {
++            builder.refreshRanking();
++        }
+     }
+ 
+     @Override
 diff --git a/forge-gui-neo/src/main/java/forge/neo/NeoMain.java b/forge-gui-neo/src/main/java/forge/neo/NeoMain.java
 index 53d5f0c..8428db5 100644
 --- a/forge-gui-neo/src/main/java/forge/neo/NeoMain.java
@@ -156,6 +171,180 @@ index 9f82385..d88d8c3 100644
      }
  
      /**
+diff --git a/forge-gui-neo/src/main/java/forge/neo/card/CardNode.java b/forge-gui-neo/src/main/java/forge/neo/card/CardNode.java
+index 5d6b06c..ecd4224 100644
+--- a/forge-gui-neo/src/main/java/forge/neo/card/CardNode.java
++++ b/forge-gui-neo/src/main/java/forge/neo/card/CardNode.java
+@@ -414,6 +414,11 @@ public class CardNode extends StackPane {
+         fbType.getStyleClass().add("card-fb-type");
+         fbType.setWrapText(true);
+         fbPt.getStyleClass().add("card-fb-pt");
++        // Neo Forge 3D: die P/T des Ersatzes rechts unten, wo sie auf der
++        // gedruckten Karte (und als Pastille auf dem Bild) auch steht. Links
++        // unten ist der Platz der Draft-Bewertung, die jetzt auch ohne Bild
++        // erscheint (siehe refresh()).
++        fbPt.setAlignment(Pos.CENTER_RIGHT);
+         final Region spacer = new Region();
+         VBox.setVgrow(spacer, javafx.scene.layout.Priority.ALWAYS);
+         fallback.getChildren().addAll(fbName, fbCost, fbType, spacer, fbPt);
+@@ -759,6 +764,7 @@ public class CardNode extends StackPane {
+         fbType.setPrefWidth(textWidth);
+         fbCost.setMaxWidth(textWidth);
+         fbPt.setMaxWidth(textWidth);
++        fbPt.setPrefWidth(textWidth);
+         final double fs = Math.max(7, w * 0.085);
+         fbName.setStyle("-fx-font-size:" + fs + "px;");
+         fbCost.setStyle("-fx-font-size:" + (fs * 0.85) + "px;");
+@@ -1099,13 +1105,15 @@ public class CardNode extends StackPane {
+                     || (st != null && st.getFoilIndex() > 0) || card.hasPaperFoil());
+         setFoil(foil);
+ 
+-        // El rating del draft comparte esquina con la P/T del respaldo
+-        // procedural (fbPt): sin arte, esa esquina ya esta ocupada.
+-        if (draftRank != null && hasArt) {
++        // Neo Forge 3D: die Draft-Bewertung auch OHNE Bild. Frueher nur mit
++        // Bild, weil die P/T des Ersatzes (fbPt) dieselbe Ecke belegte — so
++        // fehlte die Zahl gerade dann, wenn Scryfall nicht erreichbar war oder
++        // die Bilder eines neuen Sets noch luden. fbPt steht jetzt rechts.
++        if (draftRank != null) {
+             rankBadge.setText(String.valueOf(draftRank));
+             rankBadge.setVisible(true);
+-            rankBadge.pseudoClassStateChanged(RANK_GOOD, draftRank >= 66);
+-            rankBadge.pseudoClassStateChanged(RANK_POOR, draftRank < 33);
++            rankBadge.pseudoClassStateChanged(RANK_GOOD, draftRank >= forge.neo.draft.DraftRating.GOOD);
++            rankBadge.pseudoClassStateChanged(RANK_POOR, draftRank < forge.neo.draft.DraftRating.POOR);
+         } else {
+             rankBadge.setVisible(false);
+             rankBadge.pseudoClassStateChanged(RANK_GOOD, false);
+diff --git a/forge-gui-neo/src/main/java/forge/neo/deck/DeckContext.java b/forge-gui-neo/src/main/java/forge/neo/deck/DeckContext.java
+index 62832fc..8347b37 100644
+--- a/forge-gui-neo/src/main/java/forge/neo/deck/DeckContext.java
++++ b/forge-gui-neo/src/main/java/forge/neo/deck/DeckContext.java
+@@ -170,6 +170,19 @@ public interface DeckContext {
+         return pool() != null;
+     }
+ 
++    /**
++     * Neo Forge 3D: ob der Deck-Editor hier die Draft-Bewertung auf den Karten
++     * zeigt (wenn sie in den Einstellungen an ist, {@code DraftRating.shown}).
++     *
++     * <p>Nur beim Deckbau aus einem Draft- oder Sealed-Pool, lokal und im
++     * Netz: dort ist die Zahl eine Hilfe bei der Wahl der 23 Karten. In einer
++     * Sammlung (Quest, Aventura) oder bei konstruierten Decks sagt eine
++     * Limited-Bewertung nichts.
++     */
++    default boolean showsDraftRanking() {
++        return false;
++    }
++
+     /**
+      * Si un mazo de aqui puede llevar <b>reglas de la casa</b> ({@link HouseRules}):
+      * solo los de las partidas libres contra la IA. Quest, Ascenso, la Aventura,
+diff --git a/forge-gui-neo/src/main/java/forge/neo/draft/DraftDeckContext.java b/forge-gui-neo/src/main/java/forge/neo/draft/DraftDeckContext.java
+index 66ef185..a122b24 100644
+--- a/forge-gui-neo/src/main/java/forge/neo/draft/DraftDeckContext.java
++++ b/forge-gui-neo/src/main/java/forge/neo/draft/DraftDeckContext.java
+@@ -296,6 +296,12 @@ public final class DraftDeckContext implements DeckContext {
+         return true;
+     }
+ 
++    /** Neo Forge 3D: die Draft-Bewertung auch beim Deckbau (Draft und Sealed). */
++    @Override
++    public boolean showsDraftRanking() {
++        return true;
++    }
++
+     @Override
+     public CardPool autoBuild(final List<PaperCard> cards) {
+         final Deck deck = humanDeck();
+diff --git a/forge-gui-neo/src/main/java/forge/neo/draft/DraftRating.java b/forge-gui-neo/src/main/java/forge/neo/draft/DraftRating.java
+new file mode 100644
+index 0000000..94b8bdb
+--- /dev/null
++++ b/forge-gui-neo/src/main/java/forge/neo/draft/DraftRating.java
+@@ -0,0 +1,65 @@
++package forge.neo.draft;
++
++import forge.gamemodes.limited.CardRanker;
++import forge.item.PaperCard;
++import forge.neo.NeoSettings;
++
++/**
++ * Die Bewertung einer Karte fuer Draft und Deckbau, 0-99.
++ *
++ * <p>Neo Forge 3D: Eine Stelle fuer die Zahl, damit der Draft-Bildschirm
++ * ({@code DraftScreen}) und der Deck-Editor ({@code DeckBuilderScreen}) fuer
++ * dieselbe Karte immer dieselbe Zahl zeigen. Sie kommt aus Forges
++ * {@link CardRanker#getRawScore} (die Ranglisten in {@code res/draft/rankings},
++ * bei Cubes die eigene Rangliste); eine Grundlandkarte ist dort absichtlich
++ * "unpickable" (-100) und wird auf 0 gesetzt.
++ */
++public final class DraftRating {
++
++    /** Ab hier gruen: eine Karte, die man gern nimmt. */
++    public static final int GOOD = 66;
++    /** Darunter gedaempft: eine Karte, die meist auf der Bank bleibt. */
++    public static final int POOR = 33;
++
++    private DraftRating() {
++    }
++
++    /**
++     * Was {@link CardRanker#getRawScore} fuer "keine Daten" liefert (dort
++     * {@code SCORE_UNPICKABLE}, privat): Grundlaender UND jede Karte, die in
++     * keiner Rangliste steht — etwa ein Set, fuer das Forge noch keine
++     * {@code .rnk} mitbringt (Star Trek, TRK).
++     */
++    private static final double NO_DATA = -100.0;
++
++    /**
++     * Die Zahl fuer diese Karte, 0-99, oder {@code null}, wenn Forge fuer sie
++     * keine Bewertung hat. Frueher wurde daraus eine 0 — bei einem Set ohne
++     * Rangliste stand dann auf JEDER Karte 0, als waeren alle gleich schlecht.
++     * Grundlaender bleiben bei 0 (absichtlich "unpickable").
++     */
++    public static Integer of(final PaperCard card) {
++        final double raw = CardRanker.getRawScore(card);
++        if (raw <= NO_DATA && !DraftDeckContext.isBasic(card)) {
++            return null;
++        }
++        return (int) Math.round(Math.max(0, Math.min(99, raw)));
++    }
++
++    /**
++     * Die Zahl, wenn sie in den Einstellungen eingeschaltet ist
++     * ({@link NeoSettings#showDraftRanking}), sonst {@code null}. Genau das,
++     * was {@code CardNode.setDraftRank} erwartet.
++     */
++    public static Integer shown(final PaperCard card) {
++        return NeoSettings.showDraftRanking() && card != null ? of(card) : null;
++    }
++
++    /**
++     * Wie {@link #shown}, aber ohne Grundlaender: beim Deckbau stehen sie
++     * unbegrenzt bereit, und eine 0 auf jeder Insel waere nur Rauschen.
++     */
++    public static Integer shownForDeck(final PaperCard card) {
++        return DraftDeckContext.isBasic(card) ? null : shown(card);
++    }
++}
+diff --git a/forge-gui-neo/src/main/java/forge/neo/draft/NetPoolContext.java b/forge-gui-neo/src/main/java/forge/neo/draft/NetPoolContext.java
+index 9575e8c..ae327a8 100644
+--- a/forge-gui-neo/src/main/java/forge/neo/draft/NetPoolContext.java
++++ b/forge-gui-neo/src/main/java/forge/neo/draft/NetPoolContext.java
+@@ -145,6 +145,12 @@ public final class NetPoolContext implements DeckContext {
+         return true;
+     }
+ 
++    /** Neo Forge 3D: die Draft-Bewertung auch beim Deckbau im Netz. */
++    @Override
++    public boolean showsDraftRanking() {
++        return true;
++    }
++
+     @Override
+     public forge.deck.CardPool autoBuild(final List<forge.item.PaperCard> cards) {
+         return LimitedAutoBuild.build(cards, null);
 diff --git a/forge-gui-neo/src/main/java/forge/neo/match/NeoGame.java b/forge-gui-neo/src/main/java/forge/neo/match/NeoGame.java
 index 4d3fc9a..b08c6f5 100644
 --- a/forge-gui-neo/src/main/java/forge/neo/match/NeoGame.java
@@ -237,6 +426,149 @@ index add98cb..da9fcf7 100644
              final Guarded safe = new Guarded(game, p, p.getLobbyPlayer());
              // El perfil que el motor deduce del mazo se recalcula, no se
              // hereda: el campo es privado y su fuente — el mazo — sigue a mano.
+diff --git a/forge-gui-neo/src/main/java/forge/neo/ui/DeckBuilderScreen.java b/forge-gui-neo/src/main/java/forge/neo/ui/DeckBuilderScreen.java
+index f94399d..41c5e03 100644
+--- a/forge-gui-neo/src/main/java/forge/neo/ui/DeckBuilderScreen.java
++++ b/forge-gui-neo/src/main/java/forge/neo/ui/DeckBuilderScreen.java
+@@ -2164,6 +2164,7 @@ public class DeckBuilderScreen extends StackPane {
+         node.setRotationEnabled(false);
+         node.setBadgesVisible(false);
+         node.setCard(CardView.getCardForUi(card));
++        node.setDraftRank(rankOf(card));
+ 
+         final Label count = new Label();
+         count.getStyleClass().add("catalogue-count");
+@@ -2571,6 +2572,7 @@ public class DeckBuilderScreen extends StackPane {
+         steps.setVisible(true);
+ 
+         final HBox content = new HBox(7, qty, name, lacking, cost, steps);
++        addRankPill(content, card);
+         content.setAlignment(Pos.CENTER_LEFT);
+         content.setPadding(new Insets(7, 8, 7, 8));
+         final StackPane row = new StackPane(new DeckArtStrip(card), content);
+@@ -2627,6 +2629,7 @@ public class DeckBuilderScreen extends StackPane {
+         node.setRotationEnabled(false);
+         node.setBadgesVisible(false);
+         node.setCard(forge.game.card.CardView.getCardForUi(card));
++        node.setDraftRank(rankOf(card));
+         final StackPane tile = new StackPane(node);
+         tile.getStyleClass().add("deck-tile");
+         if (amount > 1) {
+@@ -2687,6 +2690,7 @@ public class DeckBuilderScreen extends StackPane {
+             refreshCatalogue();
+         });
+         final HBox content = new HBox(7, qty, name, manaCost(card), new HBox(2, toMain, less));
++        addRankPill(content, card);
+         content.setAlignment(Pos.CENTER_LEFT);
+         content.setPadding(new Insets(7, 8, 7, 8));
+         final StackPane row = new StackPane(new DeckArtStrip(card), content);
+@@ -4204,6 +4208,50 @@ public class DeckBuilderScreen extends StackPane {
+         }
+     }
+ 
++    /**
++     * Neo Forge 3D: die Draft-Bewertung wurde in den Einstellungen umgeschaltet,
++     * waehrend dieser Editor offen ist. Wie im Draft soll das sofort zu sehen
++     * sein, nicht erst beim naechsten Klick: Katalog und Deck neu aufbauen.
++     */
++    public void refreshRanking() {
++        if (!editor.getFormat().showsDraftRanking()) {
++            return;
++        }
++        refreshCatalogue();
++        refreshDeck();
++    }
++
++    /**
++     * Neo Forge 3D: die Draft-Bewertung einer Karte beim Deckbau, oder null.
++     * Nur in einem Draft- oder Sealed-Pool ({@code DeckContext.showsDraftRanking})
++     * und nur, wenn sie in den Einstellungen an ist; Grundlaender ohne Zahl.
++     */
++    private Integer rankOf(final PaperCard card) {
++        return editor.getFormat().showsDraftRanking()
++                ? forge.neo.draft.DraftRating.shownForDeck(card) : null;
++    }
++
++    /**
++     * Neo Forge 3D: die Bewertung als kleine Pastille in einer Listenzeile des
++     * Decks oder der Bank, gleich hinter der Anzahl. Die Farben sind die der
++     * Pastille auf der Karte (gruen gut, gedaempft schwach).
++     */
++    private void addRankPill(final HBox content, final PaperCard card) {
++        final Integer rank = rankOf(card);
++        if (rank == null) {
++            return;
++        }
++        final Label pill = new Label(String.valueOf(rank));
++        pill.getStyleClass().add("deck-row-rank");
++        pill.pseudoClassStateChanged(javafx.css.PseudoClass.getPseudoClass("rank-good"),
++                rank >= forge.neo.draft.DraftRating.GOOD);
++        pill.pseudoClassStateChanged(javafx.css.PseudoClass.getPseudoClass("rank-poor"),
++                rank < forge.neo.draft.DraftRating.POOR);
++        javafx.scene.control.Tooltip.install(pill,
++                new javafx.scene.control.Tooltip(NeoText.get("deck.draftRanking.tip")));
++        content.getChildren().add(1, pill);
++    }
++
+     /** Guarda con ese nombre y sale, como Guardar + Volver (prueba de la sala). */
+     public void saveLeaveForTest(final String name) {
+         editor.setName(name);
+diff --git a/forge-gui-neo/src/main/java/forge/neo/ui/DraftScreen.java b/forge-gui-neo/src/main/java/forge/neo/ui/DraftScreen.java
+index 60a71cc..98b7aa1 100644
+--- a/forge-gui-neo/src/main/java/forge/neo/ui/DraftScreen.java
++++ b/forge-gui-neo/src/main/java/forge/neo/ui/DraftScreen.java
+@@ -5,7 +5,6 @@ import java.util.List;
+ import java.util.function.Consumer;
+ 
+ import forge.game.card.CardView;
+-import forge.gamemodes.limited.CardRanker;
+ import forge.item.PaperCard;
+ import forge.neo.NeoSettings;
+ import forge.neo.card.CardNode;
+@@ -287,7 +286,6 @@ public class DraftScreen extends BorderPane {
+                 draft.round(), draft.pickNumber(), draft.cardsLeft()));
+ 
+         pack.getChildren().clear();
+-        final boolean showRanking = NeoSettings.showDraftRanking();
+         int i = 0;
+         // Como en Arena: por rareza, y la tierra basica al final (PackOrder).
+         for (final PaperCard pc : forge.neo.draft.PackOrder.sort(draft.currentCards())) {
+@@ -296,8 +294,10 @@ public class DraftScreen extends BorderPane {
+             node.setCard(view);
+             // Detras de casilla en Ajustes (NeoSettings.DRAFT_RANKING): a quien
+             // ya sabe draftear el numero le da la respuesta antes de pensarla.
+-            node.setDraftRank(showRanking ? (int) Math.round(
+-                    Math.max(0, Math.min(99, CardRanker.getRawScore(pc)))) : null);
++            node.setDraftRank(forge.neo.draft.DraftRating.shown(pc));
++            // Neo Forge 3D: die Karte merkt sich der Knoten selbst, damit
++            // refreshRanking() die Zahl nicht ueber die Position zuordnen muss.
++            node.setUserData(pc);
+             node.hoverProperty().addListener((o, was, is) -> {
+                 if (is) {
+                     detail.show(view);
+@@ -613,16 +613,14 @@ public class DraftScreen extends BorderPane {
+      * el resto de {@code SettingsPanel}, que no lleva boton de "guardar").
+      */
+     public void refreshRanking() {
+-        final boolean showRanking = NeoSettings.showDraftRanking();
+-        final List<PaperCard> cards = draft.currentCards();
+-        int i = 0;
++        // Neo Forge 3D: frueher ueber die Position in draft.currentCards() —
++        // die ist aber UNSORTIERT, der Booster steht nach PackOrder sortiert
++        // da. Wer die Bewertung mitten im Draft einschaltete, bekam die Zahlen
++        // auf den falschen Karten. Jetzt traegt jeder Knoten seine Karte.
+         for (final javafx.scene.Node n : pack.getChildren()) {
+-            if (i >= cards.size()) {
+-                break;
++            if (n instanceof CardNode && n.getUserData() instanceof PaperCard) {
++                ((CardNode) n).setDraftRank(forge.neo.draft.DraftRating.shown((PaperCard) n.getUserData()));
+             }
+-            ((CardNode) n).setDraftRank(showRanking ? (int) Math.round(
+-                    Math.max(0, Math.min(99, CardRanker.getRawScore(cards.get(i))))) : null);
+-            i++;
+         }
+     }
+ }
 diff --git a/forge-gui-neo/src/main/java/forge/neo/ui/SettingsPanel.java b/forge-gui-neo/src/main/java/forge/neo/ui/SettingsPanel.java
 index af7b7e5..e76bcbf 100644
 --- a/forge-gui-neo/src/main/java/forge/neo/ui/SettingsPanel.java
@@ -295,10 +627,27 @@ index af7b7e5..e76bcbf 100644
          return Math.max(lo, Math.min(hi, v));
      }
 diff --git a/forge-gui-neo/src/main/resources/forge/neo/lang/neo-ar-MA.properties b/forge-gui-neo/src/main/resources/forge/neo/lang/neo-ar-MA.properties
-index 27e29e8..ccc162a 100644
+index 27e29e8..219382e 100644
 --- a/forge-gui-neo/src/main/resources/forge/neo/lang/neo-ar-MA.properties
 +++ b/forge-gui-neo/src/main/resources/forge/neo/lang/neo-ar-MA.properties
-@@ -2933,6 +2933,12 @@ over.replay = إغلاق الإعادة
+@@ -739,6 +739,7 @@ deck.oneHand.tip = في محرر الرزم فقط: تبويبات الفهرس/
+ deck.showAll = كل البطاقات
+ deck.showAll.tip = مع «كل البطاقات» يمكنك إضافة بطاقات لا تملكها بعد: تُحفظ المجموعة، لكن لا يمكنك اللعب بها حتى تحصل عليها.
+ deck.missing = ناقص {0}
++deck.draftRanking.tip = تقييم Draft (0–99): كلما ارتفع كانت البطاقة أقوى في Limited
+ 
+ deck.import.missing = {0} من هذه البطاقات لا تملكها بعد. تُحفظ الرزمة، لكن لا يمكنك اللعب بها حتى تحصل عليها.
+ deck.removeMissing = إزالة ما لا أملكه
+@@ -1564,7 +1565,7 @@ adventure.autosell.many = نقل {0} إلى البيع التلقائي
+ adventure.autosell.back = استعادة 1 من البيع التلقائي
+ adventure.autosell.backAll = استعادة الكل ({0}) من البيع التلقائي
+ adventure.autosell.noSpare = كل نسخة تملكها موجودة في رزمة
+-settings.draftRanking = إظهار تقييم على كل بطاقة في Draft
++settings.draftRanking = إظهار تقييم على كل بطاقة في Draft وعند بناء المجموعة
+ settings.autoSell = بيع البطاقات المكررة تلقائيًا
+ settings.questTrophy = بطاقة غنيمة من مجموعة الخصم عند الفوز
+ settings.autoSell.hint = بعد كل مبارزة. يُبقي نسخة من كل رسم، فلا تضيع أي طبعة، وما يُباع يعود إلى المتجر.
+@@ -2933,6 +2934,12 @@ over.replay = إغلاق الإعادة
  menu.replays = الإعادات
  settings.replays = الإعادات
  settings.replays.on = تسجيل مبارياتي لمشاهدتها مرة أخرى
@@ -312,10 +661,27 @@ index 27e29e8..ccc162a 100644
  settings.replays.assocRemove = التوقف عن فتح ‎.frp‎ بـ Neo Forge
  settings.replays.assocNote = انقر مرتين على إعادة (‎.frp‎) في ويندوز فتُفتح هنا في الإعادات. إذا نقلت مجلد اللعبة، اضغط مرة أخرى.
 diff --git a/forge-gui-neo/src/main/resources/forge/neo/lang/neo-de-DE.properties b/forge-gui-neo/src/main/resources/forge/neo/lang/neo-de-DE.properties
-index a362087..058cad0 100644
+index a362087..b8b3742 100644
 --- a/forge-gui-neo/src/main/resources/forge/neo/lang/neo-de-DE.properties
 +++ b/forge-gui-neo/src/main/resources/forge/neo/lang/neo-de-DE.properties
-@@ -2934,6 +2934,12 @@ over.replay = Wiederholung schließen
+@@ -743,6 +743,7 @@ deck.oneHand.tip = Nur im Deck-Editor: Die Reiter Katalog/Deck, Karten/Kommandeu
+ deck.showAll = Alle Karten
+ deck.showAll.tip = Mit „Alle Karten“ kannst du Karten hinzufügen, die du noch nicht hast: Das Deck wird gespeichert, ist aber erst spielbar, wenn du sie hast.
+ deck.missing = fehlt {0}
++deck.draftRanking.tip = Draft-Bewertung (0–99): je höher, desto stärker im Limited
+ deck.import.missing = {0} dieser Karten hast du noch nicht. Das Deck wird gespeichert, aber du kannst es erst spielen, wenn du sie hast.
+ deck.removeMissing = Nicht besessene entfernen
+ deck.removeMissing.ask = Das entfernt {0} Exemplare von Karten, die du nicht hast:
+@@ -1565,7 +1566,7 @@ adventure.autosell.many = {0} zum Autoverkauf
+ adventure.autosell.back = 1 aus dem Autoverkauf zurückholen
+ adventure.autosell.backAll = Alle {0} aus dem Autoverkauf zurückholen
+ adventure.autosell.noSpare = Alle deine Exemplare stecken in einem Deck
+-settings.draftRanking = Bewertung auf jeder Karte im Draft zeigen
++settings.draftRanking = Bewertung auf jeder Karte im Draft und beim Deckbau zeigen
+ settings.autoSell = Doppelte Karten automatisch verkaufen
+ settings.questTrophy = Eine Trophäenkarte aus dem Deck des Gegners, wenn du gewinnst
+ settings.autoSell.hint = Nach jedem Duell. Behält eins von jedem Artwork, damit keine Ausgabe verloren geht, und das Verkaufte kommt zurück in den Laden.
+@@ -2934,6 +2935,12 @@ over.replay = Wiederholung schließen
  menu.replays = Wiederholungen
  settings.replays = WIEDERHOLUNGEN
  settings.replays.on = Meine Partien aufzeichnen, um sie erneut anzusehen
@@ -329,10 +695,27 @@ index a362087..058cad0 100644
  settings.replays.assocRemove = .frp-Dateien nicht mehr mit Neo Forge öffnen
  settings.replays.assocNote = Doppelklicke in Windows auf eine Wiederholung (.frp), und sie öffnet sich hier unter Wiederholungen. Wenn du den Spielordner verschiebst, drück es erneut.
 diff --git a/forge-gui-neo/src/main/resources/forge/neo/lang/neo-en-US.properties b/forge-gui-neo/src/main/resources/forge/neo/lang/neo-en-US.properties
-index 3199219..52d562b 100644
+index 3199219..216fdd2 100644
 --- a/forge-gui-neo/src/main/resources/forge/neo/lang/neo-en-US.properties
 +++ b/forge-gui-neo/src/main/resources/forge/neo/lang/neo-en-US.properties
-@@ -2930,6 +2930,12 @@ over.replay = Close the replay
+@@ -739,6 +739,7 @@ deck.oneHand.tip = Only in the deck editor: the Catalog/Deck, Cards/Commander an
+ deck.showAll = All cards
+ deck.showAll.tip = With "All cards" you can add cards you don't own yet: the deck saves, but you can't play it until you get them.
+ deck.missing = missing {0}
++deck.draftRanking.tip = Draft rating (0–99): the higher, the stronger in Limited
+ deck.import.missing = {0} of these cards you don't own yet. The deck is saved, but you can't play it until you get them.
+ deck.removeMissing = Remove cards I don't own
+ deck.removeMissing.ask = This removes {0} copies of cards you don't own:
+@@ -1561,7 +1562,7 @@ adventure.autosell.many = Move {0} to auto-sell
+ adventure.autosell.back = Take 1 back from auto-sell
+ adventure.autosell.backAll = Take all {0} back from auto-sell
+ adventure.autosell.noSpare = Every copy you own is in a deck
+-settings.draftRanking = Show a rating on each card in the draft
++settings.draftRanking = Show a rating on each card in the draft and in deck building
+ settings.autoSell = Sell duplicate cards automatically
+ settings.questTrophy = Win a trophy card from your opponent's deck
+ settings.autoSell.hint = After each duel. Keeps one of every art, so no printing is lost, and what is sold goes back to the shop.
+@@ -2930,6 +2931,12 @@ over.replay = Close the replay
  menu.replays = Replays
  settings.replays = REPLAYS
  settings.replays.on = Record my games to watch them again
@@ -346,10 +729,27 @@ index 3199219..52d562b 100644
  settings.replays.assocRemove = Stop opening .frp files with Neo Forge
  settings.replays.assocNote = Double-click a replay (.frp) in Windows and it opens here, in Replays. If you move the game folder, press it again.
 diff --git a/forge-gui-neo/src/main/resources/forge/neo/lang/neo-es-ES.properties b/forge-gui-neo/src/main/resources/forge/neo/lang/neo-es-ES.properties
-index 1912b66..b47d0be 100644
+index 1912b66..86ebccd 100644
 --- a/forge-gui-neo/src/main/resources/forge/neo/lang/neo-es-ES.properties
 +++ b/forge-gui-neo/src/main/resources/forge/neo/lang/neo-es-ES.properties
-@@ -3166,6 +3166,12 @@ over.replay = Cerrar la repetición
+@@ -743,6 +743,7 @@ deck.oneHand.tip = Solo en el editor de mazos: las pestañas Catálogo/Mazo, Car
+ deck.showAll = Todas las cartas
+ deck.showAll.tip = Con «Todas las cartas» puedes meter cartas que aún no tienes: el mazo se guarda, pero no se puede jugar hasta que las consigas.
+ deck.missing = falta {0}
++deck.draftRanking.tip = Rating de draft (0–99): cuanto más alto, más fuerte en limitado
+ deck.import.missing = {0} de estas cartas aún no las tienes. El mazo se guarda, pero no se puede jugar hasta que las consigas.
+ deck.removeMissing = Quitar las que no tengo
+ deck.removeMissing.ask = Se quitarán {0} copias de cartas que no tienes:
+@@ -1566,7 +1567,7 @@ adventure.autosell.many = Pasar {0} a autovender
+ adventure.autosell.back = Sacar 1 de autovender
+ adventure.autosell.backAll = Sacar las {0} de autovender
+ adventure.autosell.noSpare = Todas tus copias están en algún mazo
+-settings.draftRanking = Enseñar un rating sobre cada carta del draft
++settings.draftRanking = Enseñar un rating sobre cada carta del draft y al montar el mazo
+ settings.autoSell = Vender solas las cartas repetidas
+ settings.questTrophy = Una carta de trofeo del mazo del rival al ganar
+ settings.autoSell.hint = Al terminar un duelo. Conserva una de cada arte, asi que no pierdes ninguna impresion, y lo vendido vuelve al mostrador.
+@@ -3166,6 +3167,12 @@ over.replay = Cerrar la repetición
  menu.replays = Repeticiones
  settings.replays = REPETICIONES
  settings.replays.on = Grabar mis partidas para volver a verlas
@@ -363,10 +763,27 @@ index 1912b66..b47d0be 100644
  settings.replays.assocRemove = Dejar de abrir los .frp con Neo Forge
  settings.replays.assocNote = Haz doble clic en una repetición (.frp) en Windows y se abre aquí, en Repeticiones. Si mueves la carpeta del juego, vuelve a pulsarlo.
 diff --git a/forge-gui-neo/src/main/resources/forge/neo/lang/neo-fr-FR.properties b/forge-gui-neo/src/main/resources/forge/neo/lang/neo-fr-FR.properties
-index a626705..9b6610e 100644
+index a626705..473cf7b 100644
 --- a/forge-gui-neo/src/main/resources/forge/neo/lang/neo-fr-FR.properties
 +++ b/forge-gui-neo/src/main/resources/forge/neo/lang/neo-fr-FR.properties
-@@ -2931,6 +2931,12 @@ over.replay = Fermer la rediffusion
+@@ -740,6 +740,7 @@ deck.oneHand.tip = Uniquement dans l'éditeur de decks : les onglets Catalogue/D
+ deck.showAll = Toutes les cartes
+ deck.showAll.tip = Avec « Toutes les cartes », tu peux ajouter des cartes que tu n'as pas encore : le deck s'enregistre, mais tu ne peux pas le jouer avant de les avoir.
+ deck.missing = manque {0}
++deck.draftRanking.tip = Note de draft (0–99) : plus elle est haute, plus la carte est forte en limité
+ deck.import.missing = Tu n'as pas encore {0} de ces cartes. Le deck est enregistré, mais tu ne pourras le jouer qu'une fois que tu les auras.
+ deck.removeMissing = Retirer celles que je n'ai pas
+ deck.removeMissing.ask = Ceci retire {0} exemplaires de cartes que tu n'as pas :
+@@ -1562,7 +1563,7 @@ adventure.autosell.many = Mettre {0} en vente auto
+ adventure.autosell.back = Retirer 1 de la vente auto
+ adventure.autosell.backAll = Retirer les {0} de la vente auto
+ adventure.autosell.noSpare = Tous tes exemplaires sont dans un deck
+-settings.draftRanking = Afficher une note sur chaque carte du draft
++settings.draftRanking = Afficher une note sur chaque carte du draft et pendant la construction du deck
+ settings.autoSell = Vendre automatiquement les cartes en double
+ settings.questTrophy = Une carte trophée du deck adverse quand tu gagnes
+ settings.autoSell.hint = Après chaque duel. Garde un exemplaire de chaque illustration, donc tu ne perds aucune édition, et ce qui est vendu retourne au comptoir.
+@@ -2931,6 +2932,12 @@ over.replay = Fermer la rediffusion
  menu.replays = Rediffusions
  settings.replays = REDIFFUSIONS
  settings.replays.on = Enregistrer mes parties pour les revoir
@@ -380,10 +797,27 @@ index a626705..9b6610e 100644
  settings.replays.assocRemove = Ne plus ouvrir les .frp avec Neo Forge
  settings.replays.assocNote = Double-clique sur un replay (.frp) dans Windows et il s'ouvre ici, dans Replays. Si tu déplaces le dossier du jeu, appuie à nouveau.
 diff --git a/forge-gui-neo/src/main/resources/forge/neo/lang/neo-it-IT.properties b/forge-gui-neo/src/main/resources/forge/neo/lang/neo-it-IT.properties
-index 2c47462..24187c5 100644
+index 2c47462..dadd67e 100644
 --- a/forge-gui-neo/src/main/resources/forge/neo/lang/neo-it-IT.properties
 +++ b/forge-gui-neo/src/main/resources/forge/neo/lang/neo-it-IT.properties
-@@ -2930,6 +2930,12 @@ over.replay = Chiudi il replay
+@@ -739,6 +739,7 @@ deck.oneHand.tip = Solo nell'editor di mazzi: le schede Catalogo/Mazzo, Carte/Co
+ deck.showAll = Tutte le carte
+ deck.showAll.tip = Con «Tutte le carte» puoi aggiungere carte che non hai ancora: il mazzo si salva, ma non puoi giocarlo finché non le ottieni.
+ deck.missing = manca {0}
++deck.draftRanking.tip = Valutazione draft (0–99): più è alta, più la carta è forte in limited
+ deck.import.missing = {0} di queste carte non le hai ancora. Il mazzo viene salvato, ma non puoi giocarlo finché non le ottieni.
+ deck.removeMissing = Togli quelle che non ho
+ deck.removeMissing.ask = Verranno tolte {0} copie di carte che non hai:
+@@ -1561,7 +1562,7 @@ adventure.autosell.many = Metti {0} in vendita automatica
+ adventure.autosell.back = Togli 1 dalla vendita automatica
+ adventure.autosell.backAll = Togli tutte le {0} dalla vendita automatica
+ adventure.autosell.noSpare = Tutte le tue copie sono in un mazzo
+-settings.draftRanking = Mostra una valutazione su ogni carta del draft
++settings.draftRanking = Mostra una valutazione su ogni carta del draft e nella costruzione del mazzo
+ settings.autoSell = Vendi automaticamente le carte duplicate
+ settings.questTrophy = Una carta trofeo dal mazzo avversario quando vinci
+ settings.autoSell.hint = Dopo ogni duello. Conserva un esemplare di ogni arte, così non perdi nessuna edizione, e ciò che viene venduto torna al negozio.
+@@ -2930,6 +2931,12 @@ over.replay = Chiudi il replay
  menu.replays = Replay
  settings.replays = REPLAY
  settings.replays.on = Registra le mie partite per rivederle
@@ -397,10 +831,27 @@ index 2c47462..24187c5 100644
  settings.replays.assocRemove = Non aprire più i .frp con Neo Forge
  settings.replays.assocNote = Fai doppio clic su un replay (.frp) in Windows e si apre qui, in Replay. Se sposti la cartella del gioco, premilo di nuovo.
 diff --git a/forge-gui-neo/src/main/resources/forge/neo/lang/neo-ja-JP.properties b/forge-gui-neo/src/main/resources/forge/neo/lang/neo-ja-JP.properties
-index 1474524..ae4dad8 100644
+index 1474524..a7150f3 100644
 --- a/forge-gui-neo/src/main/resources/forge/neo/lang/neo-ja-JP.properties
 +++ b/forge-gui-neo/src/main/resources/forge/neo/lang/neo-ja-JP.properties
-@@ -2933,6 +2933,12 @@ over.replay = リプレイを閉じる
+@@ -739,6 +739,7 @@ deck.oneHand.tip = デッキエディターのみ：カタログ/デッキ、カ
+ deck.showAll = すべてのカード
+ deck.showAll.tip = 「すべてのカード」なら、まだ持っていないカードも入れられる。デッキは保存できるが、手に入れるまでは使えない。
+ deck.missing = 不足 {0}
++deck.draftRanking.tip = ドラフト評価（0〜99）：高いほどリミテッドで強いカード
+ 
+ deck.import.missing = このうち{0}枚はまだ持っていません。デッキは保存されますが、そろうまで使えません。
+ deck.removeMissing = 持っていないカードを外す
+@@ -1564,7 +1565,7 @@ adventure.autosell.many = {0}枚を自動売却へ
+ adventure.autosell.back = 自動売却から1枚戻す
+ adventure.autosell.backAll = 自動売却から{0}枚すべて戻す
+ adventure.autosell.noSpare = 持っているカードはすべてデッキに入っています
+-settings.draftRanking = ドラフトの各カードに評価を表示
++settings.draftRanking = ドラフトとデッキ構築で各カードに評価を表示
+ settings.autoSell = 重複カードを自動で売却
+ settings.questTrophy = 勝利時に対戦相手のデッキからトロフィーカードを得る
+ settings.autoSell.hint = 各デュエルの後に。アートごとに1枚は残すから、どのプリントも失わないし、売ったものはショップに戻るよ。
+@@ -2933,6 +2934,12 @@ over.replay = リプレイを閉じる
  menu.replays = リプレイ
  settings.replays = リプレイ
  settings.replays.on = 対戦を記録してあとで見直す
@@ -414,10 +865,27 @@ index 1474524..ae4dad8 100644
  settings.replays.assocRemove = .frpファイルをNeo Forgeで開かない
  settings.replays.assocNote = Windowsでリプレイ(.frp)をダブルクリックすると、ここ（リプレイ）で開きます。ゲームのフォルダを移動したら、もう一度押してください。
 diff --git a/forge-gui-neo/src/main/resources/forge/neo/lang/neo-ko-KR.properties b/forge-gui-neo/src/main/resources/forge/neo/lang/neo-ko-KR.properties
-index 75cf27e..0d7066b 100644
+index 75cf27e..e4597be 100644
 --- a/forge-gui-neo/src/main/resources/forge/neo/lang/neo-ko-KR.properties
 +++ b/forge-gui-neo/src/main/resources/forge/neo/lang/neo-ko-KR.properties
-@@ -2939,6 +2939,12 @@ over.replay = 리플레이 닫기
+@@ -745,6 +745,7 @@ deck.oneHand.tip = 덱 편집기에서만: 카탈로그/덱, 카드/사령관, 
+ deck.showAll = 모든 카드
+ deck.showAll.tip = "모든 카드"에서는 아직 없는 카드도 넣을 수 있어요. 덱은 저장되지만, 카드를 얻기 전까지는 플레이할 수 없어요.
+ deck.missing = 부족 {0}
++deck.draftRanking.tip = 드래프트 등급(0–99): 높을수록 리미티드에서 강한 카드
+ 
+ deck.import.missing = 이 중 {0}장은 아직 없어요. 덱은 저장되지만, 모으기 전까지는 플레이할 수 없어요.
+ deck.removeMissing = 없는 카드 빼기
+@@ -1570,7 +1571,7 @@ adventure.autosell.many = {0}장을 자동 판매로
+ adventure.autosell.back = 자동 판매에서 1장 되돌리기
+ adventure.autosell.backAll = 자동 판매에서 {0}장 모두 되돌리기
+ adventure.autosell.noSpare = 가진 카드가 모두 덱에 들어 있습니다
+-settings.draftRanking = 드래프트의 각 카드에 등급 표시
++settings.draftRanking = 드래프트와 덱 구성에서 각 카드에 등급 표시
+ settings.autoSell = 중복 카드 자동 판매
+ settings.questTrophy = 승리하면 상대 덱에서 트로피 카드 획득
+ settings.autoSell.hint = 듀얼이 끝날 때마다요. 아트별로 한 장씩은 남겨서 어떤 인쇄판도 잃지 않고, 판 카드는 다시 상점으로 돌아가요.
+@@ -2939,6 +2940,12 @@ over.replay = 리플레이 닫기
  menu.replays = 리플레이
  settings.replays = 리플레이
  settings.replays.on = 다시 볼 수 있도록 내 게임 녹화
@@ -431,10 +899,27 @@ index 75cf27e..0d7066b 100644
  settings.replays.assocRemove = .frp 파일을 Neo Forge로 열지 않기
  settings.replays.assocNote = Windows에서 리플레이(.frp)를 더블 클릭하면 여기 리플레이에서 열립니다. 게임 폴더를 옮기면 다시 눌러 주세요.
 diff --git a/forge-gui-neo/src/main/resources/forge/neo/lang/neo-pt-BR.properties b/forge-gui-neo/src/main/resources/forge/neo/lang/neo-pt-BR.properties
-index 0f0689a..04c22c0 100644
+index 0f0689a..005f115 100644
 --- a/forge-gui-neo/src/main/resources/forge/neo/lang/neo-pt-BR.properties
 +++ b/forge-gui-neo/src/main/resources/forge/neo/lang/neo-pt-BR.properties
-@@ -2931,6 +2931,12 @@ over.replay = Fechar o replay
+@@ -739,6 +739,7 @@ deck.oneHand.tip = Só no editor de baralhos: as abas Catálogo/Baralho, Cartas/
+ deck.showAll = Todas as cartas
+ deck.showAll.tip = Com "Todas as cartas" você pode colocar cartas que ainda não tem: o deck é salvo, mas não dá para jogá-lo até conseguir as cartas.
+ deck.missing = falta {0}
++deck.draftRanking.tip = Nota de draft (0–99): quanto maior, mais forte no limitado
+ deck.import.missing = Você ainda não tem {0} destas cartas. O deck é salvo, mas só pode ser jogado quando você as conseguir.
+ deck.removeMissing = Tirar as que não tenho
+ deck.removeMissing.ask = Isto tira {0} cópias de cartas que você não tem:
+@@ -1562,7 +1563,7 @@ adventure.autosell.many = Mover {0} para venda automática
+ adventure.autosell.back = Tirar 1 da venda automática
+ adventure.autosell.backAll = Tirar todas as {0} da venda automática
+ adventure.autosell.noSpare = Todas as suas cópias estão em algum deck
+-settings.draftRanking = Mostrar uma nota em cada carta do draft
++settings.draftRanking = Mostrar uma nota em cada carta do draft e na montagem do deck
+ settings.autoSell = Vender cartas duplicadas automaticamente
+ settings.questTrophy = Uma carta de troféu do deck do oponente ao vencer
+ settings.autoSell.hint = Depois de cada duelo. Mantém uma de cada arte, então nenhuma edição se perde, e o que é vendido volta para a loja.
+@@ -2931,6 +2932,12 @@ over.replay = Fechar o replay
  menu.replays = Replays
  settings.replays = REPLAYS
  settings.replays.on = Gravar minhas partidas para revê-las
@@ -448,10 +933,27 @@ index 0f0689a..04c22c0 100644
  settings.replays.assocRemove = Parar de abrir .frp com o Neo Forge
  settings.replays.assocNote = Clique duas vezes num replay (.frp) no Windows e ele abre aqui, em Replays. Se mover a pasta do jogo, aperte de novo.
 diff --git a/forge-gui-neo/src/main/resources/forge/neo/lang/neo-ru-RU.properties b/forge-gui-neo/src/main/resources/forge/neo/lang/neo-ru-RU.properties
-index e2dbc4a..75121d3 100644
+index e2dbc4a..b969d93 100644
 --- a/forge-gui-neo/src/main/resources/forge/neo/lang/neo-ru-RU.properties
 +++ b/forge-gui-neo/src/main/resources/forge/neo/lang/neo-ru-RU.properties
-@@ -2930,6 +2930,12 @@ over.replay = Закрыть повтор
+@@ -739,6 +739,7 @@ deck.oneHand.tip = Только в редакторе колод: вкладки
+ deck.showAll = Все карты
+ deck.showAll.tip = С «Все карты» можно добавлять карты, которых у тебя ещё нет: колода сохранится, но играть ей нельзя, пока не получишь их.
+ deck.missing = нет {0}
++deck.draftRanking.tip = Рейтинг драфта (0–99): чем выше, тем сильнее карта в лимитед
+ deck.import.missing = {0} из этих карт у тебя пока нет. Колода сохранится, но играть ею можно будет, только когда они у тебя появятся.
+ deck.removeMissing = Убрать те, которых нет
+ deck.removeMissing.ask = Будут убраны {0} копий карт, которых у тебя нет:
+@@ -1561,7 +1562,7 @@ adventure.autosell.many = {0} в автопродажу
+ adventure.autosell.back = Вернуть 1 из автопродажи
+ adventure.autosell.backAll = Вернуть все {0} из автопродажи
+ adventure.autosell.noSpare = Все твои копии уже в колодах
+-settings.draftRanking = Показывать рейтинг на каждой карте драфта
++settings.draftRanking = Показывать рейтинг на каждой карте драфта и при сборке колоды
+ settings.autoSell = Продавать дубликаты автоматически
+ settings.questTrophy = Карта-трофей из колоды соперника при победе
+ settings.autoSell.hint = После каждой дуэли. Одна копия каждого арта сохраняется, так что ни одно издание не теряется, а проданное возвращается в магазин.
+@@ -2930,6 +2931,12 @@ over.replay = Закрыть повтор
  menu.replays = Повторы
  settings.replays = ПОВТОРЫ
  settings.replays.on = Записывать мои партии, чтобы пересматривать их
@@ -465,10 +967,27 @@ index e2dbc4a..75121d3 100644
  settings.replays.assocRemove = Больше не открывать .frp в Neo Forge
  settings.replays.assocNote = Дважды щёлкните по записи (.frp) в Windows, и она откроется здесь, в «Записях». Если переместите папку игры, нажмите снова.
 diff --git a/forge-gui-neo/src/main/resources/forge/neo/lang/neo-zh-CN.properties b/forge-gui-neo/src/main/resources/forge/neo/lang/neo-zh-CN.properties
-index 0fa14a3..c955fc0 100644
+index 0fa14a3..654a156 100644
 --- a/forge-gui-neo/src/main/resources/forge/neo/lang/neo-zh-CN.properties
 +++ b/forge-gui-neo/src/main/resources/forge/neo/lang/neo-zh-CN.properties
-@@ -2933,6 +2933,12 @@ over.replay = 关闭回放
+@@ -739,6 +739,7 @@ deck.oneHand.tip = 仅限卡组编辑器：目录/卡组、卡牌/指挥官、
+ deck.showAll = 所有卡牌
+ deck.showAll.tip = 选"所有卡牌"可以放入还没有的牌：套牌能保存，但拿到这些牌之前不能使用。
+ deck.missing = 缺 {0}
++deck.draftRanking.tip = 轮抓评分（0–99）：越高，在限制赛中越强
+ 
+ deck.import.missing = 其中 {0} 张牌你还没有。牌组会保存，但要等你拿到它们才能使用。
+ deck.removeMissing = 移除我没有的牌
+@@ -1564,7 +1565,7 @@ adventure.autosell.many = 将 {0} 张设为自动出售
+ adventure.autosell.back = 从自动出售中取回 1 张
+ adventure.autosell.backAll = 从自动出售中取回全部 {0} 张
+ adventure.autosell.noSpare = 你的所有副本都在牌组中
+-settings.draftRanking = 在轮抓的每张卡上显示评分
++settings.draftRanking = 在轮抓和组牌时在每张卡上显示评分
+ settings.autoSell = 自动卖掉重复的卡
+ settings.questTrophy = 获胜时从对手套牌中获得一张战利品牌
+ settings.autoSell.hint = 每打完一场对决就卖。每种画面都会留一张，不会丢掉任何一个版本，卖掉的会重新出现在商店里。
+@@ -2933,6 +2934,12 @@ over.replay = 关闭回放
  menu.replays = 回放
  settings.replays = 回放
  settings.replays.on = 录制我的对局以便回看
@@ -481,3 +1000,40 @@ index 0fa14a3..c955fc0 100644
  settings.replays.assoc = 用 Neo Forge 打开 .frp 文件
  settings.replays.assocRemove = 不再用 Neo Forge 打开 .frp 文件
  settings.replays.assocNote = 在 Windows 中双击回放（.frp），就会在这里的“回放”中打开。如果移动了游戏文件夹，请再按一次。
+diff --git a/forge-gui-neo/src/main/resources/forge/neo/neo.css b/forge-gui-neo/src/main/resources/forge/neo/neo.css
+index a7e9f17..05d3c75 100644
+--- a/forge-gui-neo/src/main/resources/forge/neo/neo.css
++++ b/forge-gui-neo/src/main/resources/forge/neo/neo.css
+@@ -496,6 +496,32 @@
+     -fx-padding: 0.05em 0.55em 0.1em 0.55em;
+ }
+ 
++/* Neo Forge 3D: die Draft-Bewertung in einer Zeile von Deck oder Bank, im
++   Look der Pastille auf der Karte (.card-draft-rank): dunkel, gruen ab 66,
++   gedaempft unter 33. Feste Breite, damit die Namen untereinander bleiben. */
++.deck-row-rank {
++    -fx-font-size: 0.8em;
++    -fx-font-weight: bold;
++    -fx-text-fill: -neo-text;
++    -fx-background-color: rgba(8,11,16,0.95);
++    -fx-background-radius: 4;
++    -fx-border-color: rgba(255,255,255,0.28);
++    -fx-border-radius: 4;
++    -fx-border-width: 1;
++    -fx-padding: 0 0.3em 0 0.3em;
++    -fx-min-width: 2.1em;
++    -fx-alignment: center;
++}
++.deck-row-rank:rank-good {
++    -fx-text-fill: #0B0E13;
++    -fx-background-color: -neo-valid;
++    -fx-border-color: rgba(0,0,0,0.35);
++}
++.deck-row-rank:rank-poor {
++    -fx-text-fill: -neo-text-dim;
++    -fx-border-color: rgba(255,255,255,0.12);
++}
++
+ /* Las copias de mas de una suelta de la tienda: "x5" abajo a la derecha (Discord, 15-10-2026). */
+ .shop-count {
+     -fx-font-size: 0.95em;
