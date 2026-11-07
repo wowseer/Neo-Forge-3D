@@ -215,7 +215,7 @@ Mausklicks: nur für Optik verwenden, Spiellogik ohne Fenster prüfen, nie `warp
   Getestet wird mit den vorhandenen Testdecks, nicht mit Decks aus den Karten im Video.
 - **Sprache:** Code-Kommentare und `///`-Doku auf **Deutsch**. Die Entwickler-Doku für GitHub ist
   **Englisch**: `README.md`, `forge-bridge/README.md`, `integrations/neoforge/README.md`,
-  `docs/DOCUMENTATION.md`, `docs/Forge-Protocol.md`, `docs/Embedding.md`. Interne Pläne bleiben
+  `docs/DOCUMENTATION.md`, `docs/Forge-Protocol.md`, `docs/Embedding.md`, `docs/Mechanics.md` (jede Mechanik mit Bild aus `docs/bilder/`, nur mit `CLASH_FREE_ASSETS=1` aufgenommen). Interne Pläne bleiben
   Deutsch (`CLAUDE.md`, `docs/claude/`, `docs/Kartenabdeckung.md`, `docs/UI-Aktionen.xlsx`).
   Commit-Messages auf Englisch. Projektname überall „Neo Forge 3D“ (getrennt geschrieben).
 - **Doku immer mitpflegen**, im selben Schritt wie die Änderung:

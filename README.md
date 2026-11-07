@@ -9,10 +9,11 @@ The goal is a 3D table for [NeoForge](https://github.com/AdrianLopez98/NeoForge)
 end for Forge): when NeoForge starts a two-player match with the 3D table enabled, this Godot UI
 takes over the human seat. Until then it also runs standalone against Forge.
 
-![Game table on turn five](docs/bilder/tisch.png)
+![The game table](docs/bilder/tisch.jpg)
 
 <sub>All images were made in "own graphics only" mode (`CLASH_FREE_ASSETS=1`): self-drawn card
-frames, type symbols and mana symbols, no card images.</sub>
+frames, type symbols and mana symbols, no card images. **Every mechanic with a picture:
+[docs/Mechanics.md](docs/Mechanics.md).**</sub>
 
 ## Features
 
@@ -34,9 +35,13 @@ frames, type symbols and mana symbols, no card images.</sub>
 
 | Planeswalker | Choosing a mode |
 |---|---|
-| ![Planeswalker view](docs/bilder/planeswalker.png) | ![Choosing a mode](docs/bilder/modus.png) |
-| **Spell on the stack with target arrow** | **Declaring attackers** |
-| ![Stack with target arrow](docs/bilder/stack.png) | ![Attack](docs/bilder/angriff.png) |
+| ![Planeswalker view](docs/bilder/planeswalker.jpg) | ![Choosing a mode](docs/bilder/modus.jpg) |
+| **Spell on the stack with target arrow** | **Attacking** |
+| ![Stack with target arrow](docs/bilder/stack_modi.jpg) | ![Attack](docs/bilder/angriff.jpg) |
+| **Kicker** | **Colour wheel** |
+| ![Kicker](docs/bilder/kicker.jpg) | ![Colour wheel](docs/bilder/farbrad.jpg) |
+
+More: [all mechanics with pictures](docs/Mechanics.md).
 
 ## Repository layout
 
@@ -48,7 +53,7 @@ frames, type symbols and mana symbols, no card images.</sub>
 | `rust/crates/clash-forge-client/` | Connection to the bridge (Java process or host), no Godot dependency; example `autoplay` |
 | `forge-bridge/` | Java bridge to Forge: facade `ClashBridge`, `TableLauncher`, Forge adapter |
 | `integrations/neoforge/` | NeoForge integration: `ClashTable` + patch for NeoForge's classes |
-| `docs/` | Usage and architecture ([`DOCUMENTATION.md`](docs/DOCUMENTATION.md)), protocol ([`Forge-Protocol.md`](docs/Forge-Protocol.md)), embedding in other projects ([`Embedding.md`](docs/Embedding.md)), API reference |
+| `docs/` | Usage and architecture ([`DOCUMENTATION.md`](docs/DOCUMENTATION.md)), every mechanic with a picture ([`Mechanics.md`](docs/Mechanics.md)), protocol ([`Forge-Protocol.md`](docs/Forge-Protocol.md)), embedding in other projects ([`Embedding.md`](docs/Embedding.md)), API reference |
 | `tools/` | Scripts (docs, NeoForge sync/patch/test) |
 
 The Forge integration can be reused without the Godot table – for your own front ends and other
