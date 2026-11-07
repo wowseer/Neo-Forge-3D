@@ -155,13 +155,17 @@ may change.
 ## 4. NeoForge
 
 Ready-made integration in [`integrations/neoforge/`](../integrations/neoforge/README.md): the
-wrapper `forge.neo.clash.ClashTable` (reads NeoForge's settings, calls `TableLauncher`) and a
-patch for four NeoForge classes and the language files. Installing into a NeoForge repository:
+wrapper `forge.neo.clash.ClashTable` (reads NeoForge's settings, decides which matches run on the
+3D table – only 1 vs 1 –, calls `TableLauncher`) and a patch for four NeoForge classes and the
+language files. Installing into a NeoForge repository:
 
 ```sh
 git -C <neoforge> apply "<neo-forge-3d>/integrations/neoforge/neoforge-host.patch"
 NEOFORGE=<neoforge> tools/sync_neoforge.sh
 ```
+
+Or build NeoForge with the table in one step: `tools/neoforge_build.sh` (Maven, Forge checkout as
+in NeoForge's `BUILDING.md`), then start it with `tools/neoforge_play.sh`.
 
 ## 5. Building
 
@@ -170,5 +174,6 @@ NEOFORGE=<neoforge> tools/sync_neoforge.sh
 | Java bridge | `forge-bridge/build.sh` (Forge jar via `FORGE_JAR`, otherwise `forge-bridge/forge/` or `~/Games/Forge`) | `forge-bridge/build/forge-bridge-core.jar` (library), `forge-bridge/build/forge-bridge.jar` (program, main class `clash.forgebridge.app.BridgeMain`) |
 | Rust crates + Godot extension | `cd rust && cargo build` | `rust/target/debug/libneo_forge_3d.so` |
 | Test only the crates | `cd rust && cargo test -p clash-protocol -p clash-forge-client` | – |
+| NeoForge with the 3D table (Maven) | `tools/neoforge_build.sh`, start with `tools/neoforge_play.sh` | `<forge>/forge-gui-neo/target/` |
 | NeoForge patch jar (without Maven) | `tools/neoforge_patch.sh` | `forge-bridge/build/neoforge/neoforge-clash-patch.jar` |
 | Regenerate the NeoForge patch | `tools/neoforge_export_patch.sh` | `integrations/neoforge/neoforge-host.patch` |

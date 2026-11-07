@@ -398,24 +398,35 @@ before `~/Games/Forge`.
 
 ## 5a. Playing in NeoForge (3D table)
 
-NeoForge (JavaFX front end for Forge) can play its matches on this 3D table: menus, decks and
-modes stay in NeoForge, the game table is Godot. Technically: NeoForge opens a local port, starts
-Godot with `-- --clash-port=N`, and the human seat is driven through the bridge (protocol v3)
-(details: `docs/Forge-Protocol.md`, section "Embedded in NeoForge").
+NeoForge (JavaFX front end for Forge) can play its 1 vs 1 matches on this 3D table: menus, decks
+and modes stay in NeoForge, the game table is Godot. Technically: NeoForge opens a local port,
+starts Godot with `-- --clash-port=N`, and the human seat is driven through the bridge (protocol
+v3) (details: `docs/Forge-Protocol.md`, section "Embedded in NeoForge").
 
-**Enabling:** in NeoForge under *Settings → 3D table (Neo Forge 3D)*: "Play my matches on the 3D
-table" = yes, "Godot executable" (path to the Godot 4.7 binary) and "Neo Forge 3D project folder"
-(the `godot/` folder of this project). Alternatively at startup
-`-Dneo.clash=true -Dneo.clash.godot=… -Dneo.clash.project=…` or the environment variables
-`NEOFORGE_CLASH`, `CLASH_GODOT`, `CLASH_PROJECT`. If Godot does not start within 2 minutes,
-NeoForge plays with its own table as usual.
+**Only 1 vs 1:** the 3D table takes matches with exactly two players (you and one opponent,
+Commander 1 vs 1 too). Matches with more players, two people on one computer (hot seat),
+Planechase, Archenemy and Vanguard stay on NeoForge's own table (`ClashTable.useFor`).
+
+**Building and starting:** `tools/neoforge_build.sh` builds NeoForge from source with the 3D table
+(NeoForge repository + Forge checkout as in NeoForge's `BUILDING.md`, Maven, Java 17+),
+`tools/neoforge_play.sh` starts it with the paths to Godot and this project already set. Details:
+`integrations/neoforge/README.md`.
+
+**Enabling:** in NeoForge under *Settings → Table → 3D table (Neo Forge 3D)*: "Play 1 vs 1 games
+on the 3D table" = yes; "Godot program" (path to the Godot 4.7 binary) and "Neo Forge 3D project
+folder" (the `godot/` folder of this project) if the start script does not set them. Order: system
+property (`-Dneo.clash=true -Dneo.clash.godot=… -Dneo.clash.project=…`, this start only) →
+NeoForge setting → environment variable (`NEOFORGE_CLASH`, `CLASH_GODOT`, `CLASH_PROJECT`). If
+Godot does not start within 2 minutes, NeoForge plays with its own table as usual. While the match
+runs, NeoForge's window says "The game is running in the 3D table window."
 
 **Flow:** start a match in NeoForge → the Godot window opens with the match → the end of the game
 is shown for 4 s, then Godot closes and NeoForge shows the result. If the Godot window is closed
 in the middle of the match, the player's seat concedes.
 
 **Developing and testing without Maven:** NeoForge's sources only build in a Forge checkout with
-Maven. For the integration the installed NeoForge (`~/Games/NeoForge`) is enough:
+Maven (`tools/neoforge_build.sh`). For the integration an installed NeoForge (`~/Games/NeoForge`,
+the itch.io build) is enough:
 - The NeoForge integration lives separately in `integrations/neoforge/` (`ClashTable.java` and
   `neoforge-host.patch` for NeoForge's classes, instructions in the README there); once
   `git -C <neoforge> apply integrations/neoforge/neoforge-host.patch`,

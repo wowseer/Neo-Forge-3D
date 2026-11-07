@@ -1,5 +1,5 @@
 #!/bin/sh
-# Bringt die NeoForge-Anbindung in ein NeoForge-Repo (Standard ~/Entwicklung/Java/NeoForge):
+# Bringt die NeoForge-Anbindung in ein NeoForge-Repo (Standard ~/OProgrammieren/Java/NeoForge):
 #   1. Brücken-Bibliothek: forge-bridge/src/clash/forgebridge (ohne den Programmstart app/)
 #   2. NeoForge-Hülle:     integrations/neoforge/src/forge/neo/clash/ClashTable.java
 # Die Änderungen an NeoForges eigenen Klassen (NeoGame, SafeAi, NeoMain, SettingsPanel,
@@ -8,7 +8,7 @@
 # Maßgeblich ist immer die Fassung in Neo Forge 3D; in NeoForge nicht von Hand ändern.
 set -e
 cd "$(dirname "$0")/.."
-NEOFORGE="${NEOFORGE:-$HOME/Entwicklung/Java/NeoForge}"
+NEOFORGE="${NEOFORGE:-$HOME/OProgrammieren/Java/NeoForge}"
 JAVA="$NEOFORGE/forge-gui-neo/src/main/java"
 DEST="$JAVA/clash/forgebridge"
 rm -rf "$DEST"

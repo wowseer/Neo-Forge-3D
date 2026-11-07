@@ -4,15 +4,16 @@
 
 **Eine 3D-Oberfläche, die das komplette Backend von Forge bedient – und am Ende in NeoForge lebt.**
 
-- **NeoForge** (`~/Entwicklung/Java/NeoForge/`, github.com/AdrianLopez98/NeoForge) ist eine neue
+- **NeoForge** (`~/OProgrammieren/Java/NeoForge/`, github.com/AdrianLopez98/NeoForge) ist eine neue
   Oberfläche für Forge in **JavaFX**: ein Modul `forge-gui-neo`, das in einen Forge-Checkout
   eingebaut wird (Menüs, Deckbau, Modi wie Commander, Quest, Ascent, Adventure, Online). Den
   Spieltisch zeichnet dort `forge.neo.match.NeoMatchUI` (Forges `IGuiGame`); gestartet wird eine
   Partie in `forge.neo.match.NeoGame` über Forges `HostedMatch`.
-- **Integration:** Startet NeoForge eine Partie mit dem 3D-Tisch, übernimmt unser
-  `RemotePlayerController` den menschlichen Sitzplatz und NeoForge startet diese Godot-UI als
-  Spieltisch (lokaler Socket, Protokoll v3). Deckauswahl, Formate und Modi bleiben bei NeoForge –
-  hier wird dafür **keine** UI gebaut.
+- **Integration:** Startet NeoForge eine Partie 1 gegen 1 mit eingeschaltetem 3D-Tisch
+  (Einstellungen → Tisch → „3D-Tisch (Neo Forge 3D)“, Entscheidung in `ClashTable.useFor`),
+  übernimmt unser `RemotePlayerController` den menschlichen Sitzplatz und NeoForge startet diese
+  Godot-UI als Spieltisch (lokaler Socket, Protokoll v3). Deckauswahl, Formate und Modi bleiben
+  bei NeoForge – hier wird dafür **keine** UI gebaut.
 - Bis dahin läuft die UI eigenständig gegen Forge über `forge-bridge/` (Java-Prozess, stdin/stdout).
 - Jede Entscheidung, die die Engine einem Spieler abverlangt, trifft der Spieler in der 3D-Ansicht
   selbst; jeder Teil des Spielzustands ist auf dem Tisch oder im HUD sichtbar. Die KI steuert nur
@@ -161,11 +162,15 @@ Deckauswahl und Formate übernimmt NeoForge.
   Der Ablauf für menschliche Spieler steht in `forge-game/.../player/PlaySpellAbility.java`.
   Nur lesen, nie ändern. Der Fork kann vom Jar abweichen: Logik aus dem Quellcode übernehmen,
   aber nur Methoden verwenden, die es in 2.0.15 gibt.
-- NeoForge (JavaFX-Oberfläche) im Quellcode: `~/Entwicklung/Java/NeoForge/forge-gui-neo/`
-  (Partie-Start `forge/neo/match/NeoGame.java`, Tisch `NeoMatchUI.java`). Installierte Version zum
-  Kompilieren und Testen ohne Maven: `~/Games/NeoForge/lib/app/` (`neo.jar`, Forge 2.0.16-Jars,
-  Laufzeit Java 17 unter `lib/runtime`). Der Integrationscode liegt im NeoForge-Repo unter
-  `forge/neo/clash/`; dort nur lokal committen, **nie pushen** (Remote gehört AdrianLopez98).
+- NeoForge (JavaFX-Oberfläche) im Quellcode: `~/OProgrammieren/Java/NeoForge/forge-gui-neo/`
+  (Partie-Start `forge/neo/match/NeoGame.java`, Tisch `NeoMatchUI.java`). Gebaut wird es als Modul
+  im Forge-Checkout `~/OProgrammieren/Java/forge` (Forge auf NeoForges `FORGE_REF`, Modul im
+  `pom.xml`, NeoForges `BUILDING.md`) mit Maven aus `~/.local/opt/apache-maven-*` und dem System-JDK
+  (27 geht): `tools/neoforge_build.sh`, starten mit `tools/neoforge_play.sh`. Eine installierte
+  itch.io-Version (`~/Games/NeoForge/lib/app/`) ist nur für `tools/neoforge_patch.sh` /
+  `neoforge_clash.sh` nötig und gerade nicht vorhanden. Der Integrationscode liegt im NeoForge-Repo
+  auf dem lokalen Branch `neo-forge-3d` (`main` bleibt wie upstream); dort nur lokal committen,
+  **nie pushen** (Remote gehört AdrianLopez98).
 - forge-rules-rs (Rust-Neuschreibung der Regeln, nicht NeoForge): `~/Entwicklung/Java/forge/rust/`
   – Vorbild des Entscheidungsmodells (`forge-engine/src/decision.rs`). Nur lesen.
 
@@ -180,6 +185,8 @@ Deckauswahl und Formate übernimmt NeoForge.
 | Brücken-Code nach NeoForge kopieren | `tools/sync_neoforge.sh` und danach `tools/neoforge_patch.sh` (nach jeder Änderung an `forge-bridge/src/` oder `integrations/neoforge/src/` – sonst spielt NeoForge mit der alten Brücke) |
 | NeoForge-Klassen geändert (im NeoForge-Repo, lokal committet) | `tools/neoforge_export_patch.sh` → `integrations/neoforge/neoforge-host.patch` neu (Änderungen an NeoForge immer dort festhalten) |
 | Crates ohne Godot testen | `cd rust && cargo test -p clash-protocol -p clash-forge-client`; Beispiel `cargo run -p clash-forge-client --example autoplay -- <forge> <bridge.jar> <deck1> <deck2>` |
+| NeoForge mit 3D-Tisch bauen (Maven) | `tools/neoforge_build.sh` (Patch, Sync, Modul in den Forge-Checkout, `mvn package`) |
+| NeoForge mit 3D-Tisch spielen | `tools/neoforge_play.sh` (Daten in `~/.local/share/NeoForge`; Testbefehl: `NEOFORGE_CMD=clash`, Godot ohne Fenster über `CLASH_GODOT=<Hülle mit --headless>`) |
 | NeoForge-Patch bauen (ohne Maven) | `tools/neoforge_patch.sh` → `forge-bridge/build/neoforge/neoforge-clash-patch.jar` |
 | NeoForge-Partie mit 3D-Tisch | `tools/neoforge_clash.sh [--deck=NAME] [--timeout=SEK]` (Testkopie der Installation, eigene Spielstände bleiben unberührt) |
 | Godot | `godot` (`/usr/bin/godot`, 4.7.2 aus dem System, im PATH) |

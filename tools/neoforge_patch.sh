@@ -4,7 +4,7 @@
 # NEOFORGE = NeoForge-Repo, NEOFORGE_APP = installierte NeoForge (Ordner mit lib/app)
 set -e
 cd "$(dirname "$0")/.."
-NEOFORGE="${NEOFORGE:-$HOME/Entwicklung/Java/NeoForge}"
+NEOFORGE="${NEOFORGE:-$HOME/OProgrammieren/Java/NeoForge}"
 NEOFORGE_APP="${NEOFORGE_APP:-$HOME/Games/NeoForge}"
 SRC="$NEOFORGE/forge-gui-neo/src/main/java"
 OUT=forge-bridge/build/neoforge

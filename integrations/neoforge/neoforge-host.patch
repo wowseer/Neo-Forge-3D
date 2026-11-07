@@ -1,8 +1,8 @@
 diff --git a/forge-gui-neo/src/main/java/forge/neo/NeoMain.java b/forge-gui-neo/src/main/java/forge/neo/NeoMain.java
-index e6702cd..7b0e1e0 100644
+index 53d5f0c..8428db5 100644
 --- a/forge-gui-neo/src/main/java/forge/neo/NeoMain.java
 +++ b/forge-gui-neo/src/main/java/forge/neo/NeoMain.java
-@@ -208,6 +208,12 @@ public final class NeoMain {
+@@ -223,6 +223,12 @@ public final class NeoMain {
              case "watch":
                  runGame(deckName, opponents, NeoMatchUI.Mode.OBSERVE, timeout, verbose);
                  break;
@@ -16,24 +16,31 @@ index e6702cd..7b0e1e0 100644
                  banner("PHASE 2 - JavaFX interface");
                  // Los textos del motor, antes de construir NeoApp: hay campos
 diff --git a/forge-gui-neo/src/main/java/forge/neo/match/NeoGame.java b/forge-gui-neo/src/main/java/forge/neo/match/NeoGame.java
-index 4d3fc9a..9e0d215 100644
+index 4d3fc9a..b08c6f5 100644
 --- a/forge-gui-neo/src/main/java/forge/neo/match/NeoGame.java
 +++ b/forge-gui-neo/src/main/java/forge/neo/match/NeoGame.java
-@@ -344,7 +344,12 @@ public final class NeoGame {
+@@ -344,7 +344,19 @@ public final class NeoGame {
              FModel.getPreferences().setPref(FPref.MATCH_AI_TIMEOUT, "2");
          }
  
 -        final NeoMatchUI gui = new NeoMatchUI(mode, verbose);
-+        // Neo Forge 3D: 3D-Tisch (Godot) statt NeoMatchUI fuer den menschlichen Sitz. NeoMatchUI
-+        // laeuft dann nur unsichtbar als Zuschauer mit (wie im Modus OBSERVE ohne Tisch).
++        // Neo Forge 3D: im 1 gegen 1 der 3D-Tisch (Godot) statt NeoMatchUI fuer den menschlichen
++        // Sitz. NeoMatchUI laeuft dann nur unsichtbar als Zuschauer mit (wie im Modus OBSERVE ohne
++        // Tisch). Mehr Spieler, Hot Seat oder Planechase/Archenemy/Vanguard: NeoForges Tisch.
 +        final clash.forgebridge.TableLauncher.Session table3d =
-+                mode == NeoMatchUI.Mode.HUMAN && forge.neo.clash.ClashTable.isEnabled()
++                mode == NeoMatchUI.Mode.HUMAN && forge.neo.clash.ClashTable.useFor(opponents,
++                        forge.neo.look.RivalSetup.isPerRival(aiProfile)
++                                && forge.neo.look.RivalSetup.anyHuman(opponents),
++                        seating == null ? EnumSet.of(format.getGameType()) : seating.variants())
 +                        ? forge.neo.clash.ClashTable.open() : null;
++        if (table3d != null && binder != null) {
++            binder.setPrompt(forge.neo.NeoText.get("clash.playing"));
++        }
 +        final NeoMatchUI gui = new NeoMatchUI(table3d != null ? NeoMatchUI.Mode.OBSERVE : mode, verbose);
          gui.setAutoPayMana(autoPayMana);
          gui.setEnding(ending);
          // Solo comprobadores: la interfaz de la partida, para hacer de jugador.
-@@ -352,7 +357,7 @@ public final class NeoGame {
+@@ -352,7 +364,7 @@ public final class NeoGame {
          if (forTest != null) {
              forTest.accept(gui);
          }
@@ -42,7 +49,7 @@ index 4d3fc9a..9e0d215 100644
              gui.setBinder(binder);
              gui.setTable(binder.getTable());
              // El menu de pausa necesita poder decirle "sal de aqui".
-@@ -375,6 +380,11 @@ public final class NeoGame {
+@@ -375,6 +387,11 @@ public final class NeoGame {
              humanSeat = seating == null ? format.register(deck, seats)
                      : seating.human(deck, seats);
              humanSeat.setPlayer(forge.neo.look.NeoPlayers.human());
@@ -54,16 +61,7 @@ index 4d3fc9a..9e0d215 100644
              players.add(humanSeat);
          }
  
-@@ -389,7 +399,7 @@ public final class NeoGame {
-             final Deck aiDeck = deckForOpponent(opponentDecks, i, deck);
-             final RegisteredPlayer ai = seating == null ? format.register(aiDeck, seats)
-                     : seating.opponent(i, aiDeck, seats);
--            if (mode == NeoMatchUI.Mode.HUMAN && forge.neo.look.RivalSetup.isPerRival(aiProfile)
-+            if (table3d == null && mode == NeoMatchUI.Mode.HUMAN && forge.neo.look.RivalSetup.isPerRival(aiProfile)
-                     && forge.neo.look.RivalSetup.isHuman(i)) {
-                 ai.setPlayer(forge.neo.look.NeoPlayers.hotSeat(i));
-                 hotSeats.add(ai);
-@@ -478,7 +488,7 @@ public final class NeoGame {
+@@ -478,7 +495,7 @@ public final class NeoGame {
          // FModel.getPreferences() y nadie la habria vuelto a mirar.
          applyNeoRules(rules);
  
@@ -72,7 +70,7 @@ index 4d3fc9a..9e0d215 100644
              // Sin jugadores humanos, HostedMatch.startGame() registra el
              // espectador el solo pidiendo una GUI a IGuiBase. Solo hay que
              // decirle cual devolver.
-@@ -515,6 +525,9 @@ public final class NeoGame {
+@@ -515,6 +532,9 @@ public final class NeoGame {
                      timeoutSecs, turns);
          }
  
@@ -83,7 +81,7 @@ index 4d3fc9a..9e0d215 100644
          // La vida ANTES de shutdown(): despues la vista ya no tiene por que
          // seguir en pie, y es el dato del que vive una run de Ascenso.
 diff --git a/forge-gui-neo/src/main/java/forge/neo/match/SafeAi.java b/forge-gui-neo/src/main/java/forge/neo/match/SafeAi.java
-index c64f23c..2d8d72e 100644
+index add98cb..da9fcf7 100644
 --- a/forge-gui-neo/src/main/java/forge/neo/match/SafeAi.java
 +++ b/forge-gui-neo/src/main/java/forge/neo/match/SafeAi.java
 @@ -161,6 +161,11 @@ public final class SafeAi {
@@ -99,38 +97,43 @@ index c64f23c..2d8d72e 100644
              // El perfil que el motor deduce del mazo se recalcula, no se
              // hereda: el campo es privado y su fuente — el mazo — sigue a mano.
 diff --git a/forge-gui-neo/src/main/java/forge/neo/ui/SettingsPanel.java b/forge-gui-neo/src/main/java/forge/neo/ui/SettingsPanel.java
-index 884900f..7719553 100644
+index af7b7e5..e76bcbf 100644
 --- a/forge-gui-neo/src/main/java/forge/neo/ui/SettingsPanel.java
 +++ b/forge-gui-neo/src/main/java/forge/neo/ui/SettingsPanel.java
-@@ -1420,6 +1420,27 @@ public class SettingsPanel extends VBox {
-                     NeoSettings.save();
-                 }));
+@@ -971,6 +971,32 @@ public class SettingsPanel extends VBox {
  
-+        // --- Neo Forge 3D: 3D-Tisch (Godot) als Spieltisch ---
+         tab(Tab.TABLE);
+ 
++        // --- Neo Forge 3D: 3D-Tisch (Godot) als Spieltisch im 1 gegen 1 ---
++        // Gilt ab der naechsten Partie; siehe forge.neo.clash.ClashTable.useFor.
 +        getChildren().add(section(NeoText.get("settings.clash")));
 +        getChildren().add(toggleRow(NeoText.get("settings.clash.on"),
-+                NeoSettings.getBool(forge.neo.clash.ClashTable.SETTING_ON, false),
++                forge.neo.clash.ClashTable.isEnabled(),
 +                on -> {
 +                    NeoSettings.setBool(forge.neo.clash.ClashTable.SETTING_ON, on);
 +                    NeoSettings.save();
 +                }));
++        final Label clashNote = new Label(NeoText.get("settings.clash.note"));
++        clashNote.getStyleClass().add("settings-note");
++        clashNote.setWrapText(true);
++        getChildren().add(clashNote);
 +        getChildren().add(textRow(NeoText.get("settings.clash.godot"),
-+                NeoSettings.get(forge.neo.clash.ClashTable.SETTING_GODOT, "godot"),
++                forge.neo.clash.ClashTable.godotProgram(),
 +                v -> {
 +                    NeoSettings.set(forge.neo.clash.ClashTable.SETTING_GODOT, v);
 +                    NeoSettings.save();
 +                }));
 +        getChildren().add(textRow(NeoText.get("settings.clash.project"),
-+                NeoSettings.get(forge.neo.clash.ClashTable.SETTING_PROJECT, ""),
++                forge.neo.clash.ClashTable.projectDir(),
 +                v -> {
 +                    NeoSettings.set(forge.neo.clash.ClashTable.SETTING_PROJECT, v);
 +                    NeoSettings.save();
 +                }));
 +
-         getChildren().add(section(NeoText.get("settings.update")));
-         getChildren().add(toggleRow(NeoText.get("settings.update.on"),
-                 NeoSettings.updateCheck(),
-@@ -2498,6 +2519,19 @@ public class SettingsPanel extends VBox {
+         // --- la ronda al lado del turno ---
+         //
+         // Discord, 13-10-2026: "Turn 23 (Round 12)", para quien lleva la
+@@ -2548,6 +2574,19 @@ public class SettingsPanel extends VBox {
                  v -> onChange.accept(yes.equals(v)));
      }
  
@@ -151,167 +154,189 @@ index 884900f..7719553 100644
          return Math.max(lo, Math.min(hi, v));
      }
 diff --git a/forge-gui-neo/src/main/resources/forge/neo/lang/neo-ar-MA.properties b/forge-gui-neo/src/main/resources/forge/neo/lang/neo-ar-MA.properties
-index 035cd63..428d6bf 100644
+index 27e29e8..ccc162a 100644
 --- a/forge-gui-neo/src/main/resources/forge/neo/lang/neo-ar-MA.properties
 +++ b/forge-gui-neo/src/main/resources/forge/neo/lang/neo-ar-MA.properties
-@@ -2910,6 +2910,10 @@ over.replay = إغلاق الإعادة
+@@ -2933,6 +2933,12 @@ over.replay = إغلاق الإعادة
  menu.replays = الإعادات
  settings.replays = الإعادات
  settings.replays.on = تسجيل مبارياتي لمشاهدتها مرة أخرى
-+settings.clash = 3D TABLE (NEO FORGE 3D)
-+settings.clash.on = Play my games on the 3D table
-+settings.clash.godot = Godot program
-+settings.clash.project = Neo Forge 3D project folder (godot)
- replays.title = الإعادات
- replays.subtitle = آخر 20 مباراة لك ضد الذكاء الاصطناعي، مسجلة تلقائيًا. الإيقاف المؤقت والسرعة من الأزرار على اليمين؛ Esc للخروج.
- replays.empty = لا يوجد بعد. كل مباراة تلعبها ضد الذكاء الاصطناعي تُسجَّل تلقائيًا (ما عدا اللعب عبر الشبكة، ولاعبين على نفس الحاسوب، والمغامرة).
++settings.clash = الطاولة ثلاثية الأبعاد (NEO FORGE 3D)
++settings.clash.on = لعب مباريات 1 ضد 1 على الطاولة ثلاثية الأبعاد
++settings.clash.note = فقط للمباريات الثنائية (وCommander 1 ضد 1 أيضًا). مع لاعبين أكثر، أو لاعبَين على نفس الحاسوب، أو مع Planechase تلعب على الطاولة العادية. يسري من المباراة القادمة.
++settings.clash.godot = برنامج Godot
++settings.clash.project = مجلد مشروع Neo Forge 3D (godot)
++clash.playing = المباراة تجري في نافذة الطاولة ثلاثية الأبعاد.
+ settings.replays.assoc = فتح ملفات ‎.frp‎ بـ Neo Forge
+ settings.replays.assocRemove = التوقف عن فتح ‎.frp‎ بـ Neo Forge
+ settings.replays.assocNote = انقر مرتين على إعادة (‎.frp‎) في ويندوز فتُفتح هنا في الإعادات. إذا نقلت مجلد اللعبة، اضغط مرة أخرى.
 diff --git a/forge-gui-neo/src/main/resources/forge/neo/lang/neo-de-DE.properties b/forge-gui-neo/src/main/resources/forge/neo/lang/neo-de-DE.properties
-index ca4d0a5..6235e6e 100644
+index a362087..058cad0 100644
 --- a/forge-gui-neo/src/main/resources/forge/neo/lang/neo-de-DE.properties
 +++ b/forge-gui-neo/src/main/resources/forge/neo/lang/neo-de-DE.properties
-@@ -2911,6 +2911,10 @@ over.replay = Wiederholung schließen
+@@ -2934,6 +2934,12 @@ over.replay = Wiederholung schließen
  menu.replays = Wiederholungen
  settings.replays = WIEDERHOLUNGEN
  settings.replays.on = Meine Partien aufzeichnen, um sie erneut anzusehen
 +settings.clash = 3D-TISCH (NEO FORGE 3D)
-+settings.clash.on = Meine Partien am 3D-Tisch spielen
++settings.clash.on = Partien 1 gegen 1 am 3D-Tisch spielen
++settings.clash.note = Nur für Partien zu zweit (auch Commander 1 gegen 1). Mit mehr Spielern, zu zweit am selben Rechner oder mit Planechase spielst du am normalen Tisch. Gilt ab der nächsten Partie.
 +settings.clash.godot = Godot-Programm
 +settings.clash.project = Projektordner von Neo Forge 3D (godot)
- replays.title = Wiederholungen
- replays.subtitle = Deine letzten 20 Partien gegen die KI, automatisch aufgezeichnet. Pause und Tempo über die Tasten rechts; Escape zum Verlassen.
- replays.empty = Noch keine. Jede Partie gegen die KI wird automatisch aufgezeichnet (außer online, zu zweit am selben Computer und im Abenteuer).
++clash.playing = Die Partie läuft im Fenster des 3D-Tischs.
+ settings.replays.assoc = .frp-Dateien mit Neo Forge öffnen
+ settings.replays.assocRemove = .frp-Dateien nicht mehr mit Neo Forge öffnen
+ settings.replays.assocNote = Doppelklicke in Windows auf eine Wiederholung (.frp), und sie öffnet sich hier unter Wiederholungen. Wenn du den Spielordner verschiebst, drück es erneut.
 diff --git a/forge-gui-neo/src/main/resources/forge/neo/lang/neo-en-US.properties b/forge-gui-neo/src/main/resources/forge/neo/lang/neo-en-US.properties
-index 2093f9b..d15bb2d 100644
+index 3199219..52d562b 100644
 --- a/forge-gui-neo/src/main/resources/forge/neo/lang/neo-en-US.properties
 +++ b/forge-gui-neo/src/main/resources/forge/neo/lang/neo-en-US.properties
-@@ -2907,6 +2907,10 @@ over.replay = Close the replay
+@@ -2930,6 +2930,12 @@ over.replay = Close the replay
  menu.replays = Replays
  settings.replays = REPLAYS
  settings.replays.on = Record my games to watch them again
 +settings.clash = 3D TABLE (NEO FORGE 3D)
-+settings.clash.on = Play my games on the 3D table
++settings.clash.on = Play 1 vs 1 games on the 3D table
++settings.clash.note = Only for two-player games (Commander 1 vs 1 too). With more players, two people on one computer or Planechase you play on the normal table. Applies from the next game.
 +settings.clash.godot = Godot program
 +settings.clash.project = Neo Forge 3D project folder (godot)
- replays.title = Replays
- replays.subtitle = Your last 20 games against the AI, recorded automatically. Pause and speed are on the buttons on the right; Escape to leave.
- replays.empty = None yet. Every game you play against the AI is recorded automatically (except online games, two players on one computer and Adventure).
++clash.playing = The game is running in the 3D table window.
+ settings.replays.assoc = Open .frp files with Neo Forge
+ settings.replays.assocRemove = Stop opening .frp files with Neo Forge
+ settings.replays.assocNote = Double-click a replay (.frp) in Windows and it opens here, in Replays. If you move the game folder, press it again.
 diff --git a/forge-gui-neo/src/main/resources/forge/neo/lang/neo-es-ES.properties b/forge-gui-neo/src/main/resources/forge/neo/lang/neo-es-ES.properties
-index a415a41..136f471 100644
+index 1912b66..b47d0be 100644
 --- a/forge-gui-neo/src/main/resources/forge/neo/lang/neo-es-ES.properties
 +++ b/forge-gui-neo/src/main/resources/forge/neo/lang/neo-es-ES.properties
-@@ -3143,6 +3143,10 @@ over.replay = Cerrar la repetición
+@@ -3166,6 +3166,12 @@ over.replay = Cerrar la repetición
  menu.replays = Repeticiones
  settings.replays = REPETICIONES
  settings.replays.on = Grabar mis partidas para volver a verlas
 +settings.clash = MESA 3D (NEO FORGE 3D)
-+settings.clash.on = Jugar mis partidas en la mesa 3D
++settings.clash.on = Jugar las partidas 1 contra 1 en la mesa 3D
++settings.clash.note = Solo para partidas de dos (también Commander 1 contra 1). Con más jugadores, dos en el mismo ordenador o Planechase se juega en la mesa normal. Vale desde la próxima partida.
 +settings.clash.godot = Programa Godot
 +settings.clash.project = Carpeta del proyecto Neo Forge 3D (godot)
- replays.title = Repeticiones
- replays.subtitle = Tus últimas 20 partidas contra la IA, grabadas solas. Pausa y velocidad en los botones de la derecha; Escape para salir.
- replays.empty = Aún no hay ninguna. Cada partida que juegues contra la IA se graba sola (las de red, las de dos en el mismo ordenador y la Aventura no).
++clash.playing = La partida se juega en la ventana de la mesa 3D.
+ settings.replays.assoc = Abrir los .frp con Neo Forge
+ settings.replays.assocRemove = Dejar de abrir los .frp con Neo Forge
+ settings.replays.assocNote = Haz doble clic en una repetición (.frp) en Windows y se abre aquí, en Repeticiones. Si mueves la carpeta del juego, vuelve a pulsarlo.
 diff --git a/forge-gui-neo/src/main/resources/forge/neo/lang/neo-fr-FR.properties b/forge-gui-neo/src/main/resources/forge/neo/lang/neo-fr-FR.properties
-index cd6e360..c46f4c7 100644
+index a626705..9b6610e 100644
 --- a/forge-gui-neo/src/main/resources/forge/neo/lang/neo-fr-FR.properties
 +++ b/forge-gui-neo/src/main/resources/forge/neo/lang/neo-fr-FR.properties
-@@ -2908,6 +2908,10 @@ over.replay = Fermer la rediffusion
+@@ -2931,6 +2931,12 @@ over.replay = Fermer la rediffusion
  menu.replays = Rediffusions
  settings.replays = REDIFFUSIONS
  settings.replays.on = Enregistrer mes parties pour les revoir
-+settings.clash = 3D TABLE (NEO FORGE 3D)
-+settings.clash.on = Play my games on the 3D table
-+settings.clash.godot = Godot program
-+settings.clash.project = Neo Forge 3D project folder (godot)
- replays.title = Rediffusions
- replays.subtitle = Vos 20 dernières parties contre l’IA, enregistrées automatiquement. Pause et vitesse avec les boutons de droite ; Échap pour sortir.
- replays.empty = Aucune pour l’instant. Chaque partie contre l’IA est enregistrée automatiquement (sauf en ligne, à deux sur le même ordinateur et l’Aventure).
++settings.clash = TABLE 3D (NEO FORGE 3D)
++settings.clash.on = Jouer les parties en 1 contre 1 sur la table 3D
++settings.clash.note = Uniquement pour les parties à deux (Commander en 1 contre 1 aussi). Avec plus de joueurs, à deux sur le même ordinateur ou avec Planechase, vous jouez sur la table normale. S’applique à partir de la prochaine partie.
++settings.clash.godot = Programme Godot
++settings.clash.project = Dossier du projet Neo Forge 3D (godot)
++clash.playing = La partie se déroule dans la fenêtre de la table 3D.
+ settings.replays.assoc = Ouvrir les .frp avec Neo Forge
+ settings.replays.assocRemove = Ne plus ouvrir les .frp avec Neo Forge
+ settings.replays.assocNote = Double-clique sur un replay (.frp) dans Windows et il s'ouvre ici, dans Replays. Si tu déplaces le dossier du jeu, appuie à nouveau.
 diff --git a/forge-gui-neo/src/main/resources/forge/neo/lang/neo-it-IT.properties b/forge-gui-neo/src/main/resources/forge/neo/lang/neo-it-IT.properties
-index 101c653..800f78c 100644
+index 2c47462..24187c5 100644
 --- a/forge-gui-neo/src/main/resources/forge/neo/lang/neo-it-IT.properties
 +++ b/forge-gui-neo/src/main/resources/forge/neo/lang/neo-it-IT.properties
-@@ -2907,6 +2907,10 @@ over.replay = Chiudi il replay
+@@ -2930,6 +2930,12 @@ over.replay = Chiudi il replay
  menu.replays = Replay
  settings.replays = REPLAY
  settings.replays.on = Registra le mie partite per rivederle
-+settings.clash = 3D TABLE (NEO FORGE 3D)
-+settings.clash.on = Play my games on the 3D table
-+settings.clash.godot = Godot program
-+settings.clash.project = Neo Forge 3D project folder (godot)
- replays.title = Replay
- replays.subtitle = Le tue ultime 20 partite contro l’IA, registrate da sole. Pausa e velocità con i pulsanti a destra; Esc per uscire.
- replays.empty = Ancora nessuno. Ogni partita contro l’IA viene registrata da sola (tranne online, in due sullo stesso computer e l’Avventura).
++settings.clash = TAVOLO 3D (NEO FORGE 3D)
++settings.clash.on = Gioca le partite 1 contro 1 sul tavolo 3D
++settings.clash.note = Solo per partite a due (anche Commander 1 contro 1). Con più giocatori, in due sullo stesso computer o con Planechase si gioca sul tavolo normale. Vale dalla prossima partita.
++settings.clash.godot = Programma Godot
++settings.clash.project = Cartella del progetto Neo Forge 3D (godot)
++clash.playing = La partita si svolge nella finestra del tavolo 3D.
+ settings.replays.assoc = Apri i .frp con Neo Forge
+ settings.replays.assocRemove = Non aprire più i .frp con Neo Forge
+ settings.replays.assocNote = Fai doppio clic su un replay (.frp) in Windows e si apre qui, in Replay. Se sposti la cartella del gioco, premilo di nuovo.
 diff --git a/forge-gui-neo/src/main/resources/forge/neo/lang/neo-ja-JP.properties b/forge-gui-neo/src/main/resources/forge/neo/lang/neo-ja-JP.properties
-index 3e77a9f..6d70af6 100644
+index 1474524..ae4dad8 100644
 --- a/forge-gui-neo/src/main/resources/forge/neo/lang/neo-ja-JP.properties
 +++ b/forge-gui-neo/src/main/resources/forge/neo/lang/neo-ja-JP.properties
-@@ -2910,6 +2910,10 @@ over.replay = リプレイを閉じる
+@@ -2933,6 +2933,12 @@ over.replay = リプレイを閉じる
  menu.replays = リプレイ
  settings.replays = リプレイ
  settings.replays.on = 対戦を記録してあとで見直す
-+settings.clash = 3D TABLE (NEO FORGE 3D)
-+settings.clash.on = Play my games on the 3D table
-+settings.clash.godot = Godot program
-+settings.clash.project = Neo Forge 3D project folder (godot)
- replays.title = リプレイ
- replays.subtitle = AIとの直近20戦を自動で記録しています。一時停止と速度は右のボタン、Escで終了。
- replays.empty = まだありません。AIとの対戦は自動で記録されます（オンライン、同じPCでの2人対戦、アドベンチャーを除く）。
++settings.clash = 3Dテーブル（NEO FORGE 3D）
++settings.clash.on = 1対1の対戦を3Dテーブルで遊ぶ
++settings.clash.note = 2人対戦のみ（統率者戦の1対1も含む）。3人以上、同じPCでの2人対戦、プレインチェイスでは通常のテーブルで遊びます。次の対戦から反映されます。
++settings.clash.godot = Godotプログラム
++settings.clash.project = Neo Forge 3Dのプロジェクトフォルダ（godot）
++clash.playing = 対戦は3Dテーブルのウィンドウで行われています。
+ settings.replays.assoc = .frpファイルをNeo Forgeで開く
+ settings.replays.assocRemove = .frpファイルをNeo Forgeで開かない
+ settings.replays.assocNote = Windowsでリプレイ(.frp)をダブルクリックすると、ここ（リプレイ）で開きます。ゲームのフォルダを移動したら、もう一度押してください。
 diff --git a/forge-gui-neo/src/main/resources/forge/neo/lang/neo-ko-KR.properties b/forge-gui-neo/src/main/resources/forge/neo/lang/neo-ko-KR.properties
-index f6ce9e1..3623881 100644
+index 75cf27e..0d7066b 100644
 --- a/forge-gui-neo/src/main/resources/forge/neo/lang/neo-ko-KR.properties
 +++ b/forge-gui-neo/src/main/resources/forge/neo/lang/neo-ko-KR.properties
-@@ -2916,6 +2916,10 @@ over.replay = 리플레이 닫기
+@@ -2939,6 +2939,12 @@ over.replay = 리플레이 닫기
  menu.replays = 리플레이
  settings.replays = 리플레이
  settings.replays.on = 다시 볼 수 있도록 내 게임 녹화
-+settings.clash = 3D TABLE (NEO FORGE 3D)
-+settings.clash.on = Play my games on the 3D table
-+settings.clash.godot = Godot program
-+settings.clash.project = Neo Forge 3D project folder (godot)
- replays.title = 리플레이
- replays.subtitle = AI와 한 최근 20게임이 자동으로 녹화됩니다. 일시정지와 속도는 오른쪽 버튼, Esc로 나가기.
- replays.empty = 아직 없습니다. AI와의 게임은 자동으로 녹화됩니다(온라인, 한 컴퓨터에서 2인, 어드벤처 제외).
++settings.clash = 3D 테이블 (NEO FORGE 3D)
++settings.clash.on = 1대1 게임을 3D 테이블에서 플레이
++settings.clash.note = 2인 게임에만 적용됩니다(커맨더 1대1 포함). 플레이어가 더 많거나, 한 컴퓨터에서 2인이 하거나, 플레인체이스일 때는 일반 테이블에서 플레이합니다. 다음 게임부터 적용됩니다.
++settings.clash.godot = Godot 프로그램
++settings.clash.project = Neo Forge 3D 프로젝트 폴더 (godot)
++clash.playing = 게임이 3D 테이블 창에서 진행 중입니다.
+ settings.replays.assoc = .frp 파일을 Neo Forge로 열기
+ settings.replays.assocRemove = .frp 파일을 Neo Forge로 열지 않기
+ settings.replays.assocNote = Windows에서 리플레이(.frp)를 더블 클릭하면 여기 리플레이에서 열립니다. 게임 폴더를 옮기면 다시 눌러 주세요.
 diff --git a/forge-gui-neo/src/main/resources/forge/neo/lang/neo-pt-BR.properties b/forge-gui-neo/src/main/resources/forge/neo/lang/neo-pt-BR.properties
-index aa5d78e..2c798d4 100644
+index 0f0689a..04c22c0 100644
 --- a/forge-gui-neo/src/main/resources/forge/neo/lang/neo-pt-BR.properties
 +++ b/forge-gui-neo/src/main/resources/forge/neo/lang/neo-pt-BR.properties
-@@ -2908,6 +2908,10 @@ over.replay = Fechar o replay
+@@ -2931,6 +2931,12 @@ over.replay = Fechar o replay
  menu.replays = Replays
  settings.replays = REPLAYS
  settings.replays.on = Gravar minhas partidas para revê-las
-+settings.clash = 3D TABLE (NEO FORGE 3D)
-+settings.clash.on = Play my games on the 3D table
-+settings.clash.godot = Godot program
-+settings.clash.project = Neo Forge 3D project folder (godot)
- replays.title = Replays
- replays.subtitle = Suas últimas 20 partidas contra a IA, gravadas sozinhas. Pausa e velocidade nos botões da direita; Esc para sair.
- replays.empty = Nenhum ainda. Toda partida contra a IA é gravada sozinha (menos online, dois no mesmo computador e a Aventura).
++settings.clash = MESA 3D (NEO FORGE 3D)
++settings.clash.on = Jogar as partidas 1 contra 1 na mesa 3D
++settings.clash.note = Só para partidas a dois (Commander 1 contra 1 também). Com mais jogadores, dois no mesmo computador ou Planechase, você joga na mesa normal. Vale a partir da próxima partida.
++settings.clash.godot = Programa Godot
++settings.clash.project = Pasta do projeto Neo Forge 3D (godot)
++clash.playing = A partida está rodando na janela da mesa 3D.
+ settings.replays.assoc = Abrir arquivos .frp com o Neo Forge
+ settings.replays.assocRemove = Parar de abrir .frp com o Neo Forge
+ settings.replays.assocNote = Clique duas vezes num replay (.frp) no Windows e ele abre aqui, em Replays. Se mover a pasta do jogo, aperte de novo.
 diff --git a/forge-gui-neo/src/main/resources/forge/neo/lang/neo-ru-RU.properties b/forge-gui-neo/src/main/resources/forge/neo/lang/neo-ru-RU.properties
-index e130560..d39467f 100644
+index e2dbc4a..75121d3 100644
 --- a/forge-gui-neo/src/main/resources/forge/neo/lang/neo-ru-RU.properties
 +++ b/forge-gui-neo/src/main/resources/forge/neo/lang/neo-ru-RU.properties
-@@ -2907,6 +2907,10 @@ over.replay = Закрыть повтор
+@@ -2930,6 +2930,12 @@ over.replay = Закрыть повтор
  menu.replays = Повторы
  settings.replays = ПОВТОРЫ
  settings.replays.on = Записывать мои партии, чтобы пересматривать их
-+settings.clash = 3D TABLE (NEO FORGE 3D)
-+settings.clash.on = Play my games on the 3D table
-+settings.clash.godot = Godot program
-+settings.clash.project = Neo Forge 3D project folder (godot)
- replays.title = Повторы
- replays.subtitle = Ваши последние 20 партий против ИИ, записанные автоматически. Пауза и скорость — кнопками справа; Esc — выйти.
- replays.empty = Пока нет. Каждая партия против ИИ записывается сама (кроме сетевых, игры вдвоём за одним компьютером и Приключения).
++settings.clash = 3D-СТОЛ (NEO FORGE 3D)
++settings.clash.on = Играть партии 1 на 1 за 3D-столом
++settings.clash.note = Только для партий вдвоём (и Commander 1 на 1). С большим числом игроков, вдвоём за одним компьютером или с Planechase игра идёт за обычным столом. Действует со следующей партии.
++settings.clash.godot = Программа Godot
++settings.clash.project = Папка проекта Neo Forge 3D (godot)
++clash.playing = Партия идёт в окне 3D-стола.
+ settings.replays.assoc = Открывать файлы .frp в Neo Forge
+ settings.replays.assocRemove = Больше не открывать .frp в Neo Forge
+ settings.replays.assocNote = Дважды щёлкните по записи (.frp) в Windows, и она откроется здесь, в «Записях». Если переместите папку игры, нажмите снова.
 diff --git a/forge-gui-neo/src/main/resources/forge/neo/lang/neo-zh-CN.properties b/forge-gui-neo/src/main/resources/forge/neo/lang/neo-zh-CN.properties
-index 08f334f..3911d2a 100644
+index 0fa14a3..c955fc0 100644
 --- a/forge-gui-neo/src/main/resources/forge/neo/lang/neo-zh-CN.properties
 +++ b/forge-gui-neo/src/main/resources/forge/neo/lang/neo-zh-CN.properties
-@@ -2910,6 +2910,10 @@ over.replay = 关闭回放
+@@ -2933,6 +2933,12 @@ over.replay = 关闭回放
  menu.replays = 回放
  settings.replays = 回放
  settings.replays.on = 录制我的对局以便回看
-+settings.clash = 3D TABLE (NEO FORGE 3D)
-+settings.clash.on = Play my games on the 3D table
-+settings.clash.godot = Godot program
-+settings.clash.project = Neo Forge 3D project folder (godot)
- replays.title = 回放
- replays.subtitle = 你最近 20 局与 AI 的对局，自动录制。暂停和速度在右侧按钮；按 Esc 退出。
- replays.empty = 还没有。与 AI 的每局对局都会自动录制（联网对局、同一台电脑双人对局和冒险模式除外）。
++settings.clash = 3D 牌桌（NEO FORGE 3D）
++settings.clash.on = 在 3D 牌桌上进行 1 对 1 对局
++settings.clash.note = 仅限双人对局（包括指挥官 1 对 1）。玩家更多、同一台电脑双人对局或使用时空竞逐时，在普通牌桌上进行。从下一局开始生效。
++settings.clash.godot = Godot 程序
++settings.clash.project = Neo Forge 3D 项目文件夹（godot）
++clash.playing = 对局正在 3D 牌桌窗口中进行。
+ settings.replays.assoc = 用 Neo Forge 打开 .frp 文件
+ settings.replays.assocRemove = 不再用 Neo Forge 打开 .frp 文件
+ settings.replays.assocNote = 在 Windows 中双击回放（.frp），就会在这里的“回放”中打开。如果移动了游戏文件夹，请再按一次。

@@ -28,8 +28,11 @@ NeoGame.play ── ClashTable.open() → TableLauncher.launch(): open port, sta
   the patch `neoforge-host.patch` (changes to `NeoGame`, `SafeAi`, `NeoMain`, `SettingsPanel`,
   language files). `tools/sync_neoforge.sh` copies the bridge (without `app/`) and `ClashTable`
   to `forge-gui-neo/src/main/java/`; the version in this repository is authoritative.
-- Enabled via `neo.clash=true` (or environment `NEOFORGE_CLASH=true`); Godot executable
-  `neo.clash.godot` / `CLASH_GODOT`, project folder `neo.clash.project` / `CLASH_PROJECT`.
+- Enabled in NeoForge under *Settings → Table → 3D table*, or via `neo.clash=true` (or
+  environment `NEOFORGE_CLASH=true`); Godot executable `neo.clash.godot` / `CLASH_GODOT`, project
+  folder `neo.clash.project` / `CLASH_PROJECT` (system property → NeoForge setting → environment).
+  Only matches with exactly two players and without Planechase/Archenemy/Vanguard or hot seat
+  (`ClashTable.useFor`); all others stay on NeoForge's table.
   Test command: `NeoMain clash [--deck=NAME] [--opponents=N] [--timeout=SEC]` or `tools/neoforge_clash.sh`.
 - Flow: `ready` (with `embedded: true`) → `match_started` (without state; the state comes with
   the first request) → requests as usual → `game_over` (from `GameEventGameOutcome`) → NeoForge

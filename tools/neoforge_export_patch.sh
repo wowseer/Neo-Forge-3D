@@ -2,10 +2,10 @@
 # Schreibt die Änderungen an NeoForges eigenen Klassen (alles außer der Brücke clash/forgebridge
 # und der Hülle forge/neo/clash, die tools/sync_neoforge.sh kopiert) als Patch nach
 # integrations/neoforge/neoforge-host.patch – gegen den Stand von NeoForge upstream (origin).
-#   NEOFORGE = NeoForge-Repo (Standard ~/Entwicklung/Java/NeoForge), BASE = Vergleichsstand (origin/HEAD)
+#   NEOFORGE = NeoForge-Repo (Standard ~/OProgrammieren/Java/NeoForge), BASE = Vergleichsstand (origin/HEAD)
 set -e
 cd "$(dirname "$0")/.."
-NEOFORGE="${NEOFORGE:-$HOME/Entwicklung/Java/NeoForge}"
+NEOFORGE="${NEOFORGE:-$HOME/OProgrammieren/Java/NeoForge}"
 BASE="${BASE:-origin/HEAD}"
 OUT="$(pwd)/integrations/neoforge/neoforge-host.patch"
 git -C "$NEOFORGE" diff "$BASE" HEAD -- . \
