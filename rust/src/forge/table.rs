@@ -1648,8 +1648,8 @@ impl ForgeTable {
             // mehrere Manafähigkeiten mit je einer Farbe: Farbrad an der Karte
             _ if Self::mana_wheel_entries(&mine).is_some() => {
                 let entries = Self::mana_wheel_entries(&mine).unwrap_or_default();
-                let name = card.as_ref().map(|c| c.bind().card_name().to_string()).unwrap_or_default();
-                let prompt = format!("({name}) {}", tr!("Wähle das Mana.", "Choose the mana."));
+                // nur die Mechanik, ohne Kartennamen (das Rad steht an der Karte)
+                let prompt = tr!("Wähle das Mana.", "Choose the mana.").to_string();
                 let voluntary = !matches!(self.pending.as_ref().map(|r| &r.decision), Some(Decision::PayMana { .. }));
                 // Segmente derselben Fähigkeit (beliebige Farbe): gewählte Farbe für die Folgefrage
                 let colors: Vec<Option<char>> = entries
