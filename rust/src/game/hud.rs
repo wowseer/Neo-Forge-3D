@@ -572,7 +572,11 @@ impl TurnHud {
                     format!("{}\n{}", view.names[seat], view.counters[seat])
                 };
                 l.set_text(&text);
-                l.add_theme_color_override("font_color", if seat as i64 == active { GOLD } else { PARCHMENT });
+                // nur bei Wechsel setzen: jedes Setzen lässt Godot den Text neu setzen und auslegen
+                let color = if seat as i64 == active { GOLD } else { PARCHMENT };
+                if l.get_theme_color("font_color") != color {
+                    l.add_theme_color_override("font_color", color);
+                }
             }
             if let Some(l) = turn_label {
                 l.set_text(&turn);

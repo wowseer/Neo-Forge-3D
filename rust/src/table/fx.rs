@@ -18,7 +18,7 @@
 
 use godot::classes::geometry_instance_3d::ShadowCastingSetting;
 use godot::classes::mesh::PrimitiveType;
-use godot::classes::{ImmediateMesh, INode3D, MeshInstance3D, QuadMesh, Shader, ShaderMaterial};
+use godot::classes::{ImmediateMesh, INode3D, MeshInstance3D, QuadMesh, ShaderMaterial};
 use godot::prelude::*;
 
 use super::card3d::Card3D;
@@ -171,8 +171,7 @@ void fragment() {
 "#;
 
 fn material(code: &str) -> Gd<ShaderMaterial> {
-    let mut shader = Shader::new_gd();
-    shader.set_code(code);
+    let shader = crate::table::shared::shader(code);
     let mut m = ShaderMaterial::new_gd();
     m.set_shader(&shader);
     m.set_shader_parameter("gain", &GAIN.to_variant());

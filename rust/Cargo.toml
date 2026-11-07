@@ -16,3 +16,13 @@ godot = { version = "0.5.5", features = ["api-4-7", "register-docs"] }
 clash-protocol = { path = "crates/clash-protocol" }
 clash-forge-client = { path = "crates/clash-forge-client" }
 serde_json = "1"
+
+# Godot lädt im Editor und beim Start aus NeoForge die Debug-Bibliothek (target/debug, siehe
+# godot/rust.gdextension), deshalb wird auch sie optimiert gebaut: unoptimiert brauchte der
+# Rust-Code je Bild etwa doppelt so viel Rechenzeit. Abhängigkeiten (godot) werden selten neu
+# gebaut und dürfen voll optimiert sein; Debug-Informationen bleiben.
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3

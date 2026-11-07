@@ -96,6 +96,13 @@ impl ClientError {
     }
 }
 
+/// Speicher-Einstellungen der JVM: G1 gibt ungenutzten Heap zurück, statt ihn zu behalten
+/// (`MaxHeapFreeRatio`), und sammelt auch in Ruhe regelmäßig (`G1PeriodicGCInterval`, 10 s).
+/// Forge hält während einer Partie nur rund 200 MB lebende Daten, ohne diese Einstellungen
+/// belegte die Brücke trotzdem rund 1,2 GB, mit ihnen rund 0,7 GB (gleiches `-Xmx`).
+pub const JVM_MEMORY_ARGS: [&str; 4] =
+    ["-XX:+UseG1GC", "-XX:MinHeapFreeRatio=10", "-XX:MaxHeapFreeRatio=40", "-XX:G1PeriodicGCInterval=10000"];
+
 /// Wie die eigenständige Brücke gestartet wird.
 #[derive(Debug, Clone, PartialEq)]
 pub struct LaunchConfig {
@@ -184,6 +191,7 @@ impl ForgeClient {
         let classpath = format!("{}{}{}", abs(&cfg.bridge_jar).display(), sep, abs(&forge_jar).display());
         let mut child = Command::new(&cfg.java)
             .arg(format!("-Xmx{}m", cfg.max_memory_mb))
+            .args(JVM_MEMORY_ARGS)
             .arg("-Dfile.encoding=UTF-8")
             .arg("-Djava.awt.headless=true")
             .arg("-cp")

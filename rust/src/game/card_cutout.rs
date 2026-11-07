@@ -16,7 +16,7 @@
 //! (Früher per `clip_children` gelöst – das blendete die Medaillons in der Praxis komplett aus.)
 
 use godot::classes::control::{LayoutPreset, MouseFilter};
-use godot::classes::{Control, IControl, Shader, ShaderMaterial};
+use godot::classes::{Control, IControl, ShaderMaterial};
 use godot::prelude::*;
 
 /// Deckkraft des Inhalts, während eine Karte gehovert oder gezogen wird.
@@ -86,8 +86,7 @@ pub struct CardCutout {
 #[godot_api]
 impl IControl for CardCutout {
     fn init(base: Base<Control>) -> Self {
-        let mut shader = Shader::new_gd();
-        shader.set_code(SHADER);
+        let shader = crate::table::shared::shader(SHADER);
         let mut material = ShaderMaterial::new_gd();
         material.set_shader(&shader);
         Self { cutout: PackedVector2Array::new(), greyed: false, material, base }

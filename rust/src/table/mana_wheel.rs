@@ -19,7 +19,7 @@
 
 use godot::classes::geometry_instance_3d::ShadowCastingSetting;
 use godot::classes::label_3d::DrawFlags;
-use godot::classes::{Area3D, BoxShape3D, CollisionShape3D, INode3D, Label3D, MeshInstance3D, QuadMesh, Shader, ShaderMaterial, Texture2D};
+use godot::classes::{Area3D, BoxShape3D, CollisionShape3D, INode3D, Label3D, MeshInstance3D, QuadMesh, ShaderMaterial, Texture2D};
 use godot::prelude::*;
 
 use super::card3d::Card3D;
@@ -359,8 +359,7 @@ impl ManaWheel {
     }
 
     fn build(&mut self) {
-        let mut shader = Shader::new_gd();
-        shader.set_code(SHADER);
+        let shader = crate::table::shared::shader(SHADER);
         let mut mat = ShaderMaterial::new_gd();
         mat.set_shader(&shader);
         mat.set_render_priority(40);

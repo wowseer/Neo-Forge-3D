@@ -28,6 +28,7 @@ Sitzplätze werden als Zahl übergeben: `0` = Spieler (unten), `1` = Gegner (obe
 - [CostSymbolCanvas](#costsymbolcanvas) – erbt von `Control`
 - [DungeonCanvas](#dungeoncanvas) – erbt von `Control`
 - [DungeonView](#dungeonview) – erbt von `Node3D`
+- [FramePacer](#framepacer) – erbt von `Node`
 - [ManaFx](#manafx) – erbt von `Node3D`
 - [LoyaltyView](#loyaltyview) – erbt von `Node3D`
 - [ManaWheel](#manawheel) – erbt von `Node3D`
@@ -361,6 +362,7 @@ Zeitstrahl der Phasen (HUD, unten rechts über dem Hauptbutton): ein mit Enttapp
 | Funktion | Rückgabe | Beschreibung |
 |---|---|---|
 | `set_state(titles: PackedStringArray, current: int)` | `void` | Setzt Phasennamen (in Spielreihenfolge) und Index der aktuellen Phase (-1 = vor Spielbeginn). |
+| `draw_pulse()` | `void` | Zeichnet die aktuelle Station mit pulsierendem Schein in die eigene Ebene (jedes Bild; gerufen vom Signal `draw` der Ebene). |
 
 ## PlayerSeat
 
@@ -610,6 +612,21 @@ Dungeon-Ansicht wie in Arena: Dungeon(s) groß vor dem abgedunkelten Tisch; je n
 |---|---|
 | `picked(index: int)` | Gewählt: Dungeon-Index (Dungeon wählen) bzw. Nummer der Option des Raums (Raum wählen). |
 | `dismissed()` | Klick in der reinen Ansicht: schließen. |
+
+## FramePacer
+
+*Erbt von `Node` · Quelle: `rust/src/table/frame_pacer.rs`*
+
+Begrenzt die Bildrate (`Engine.max_fps`) je nach Lage: volle Rate, solange sich etwas tut (Eingaben, Nachrichten der Engine), gedrosselt in Ruhe und stark gedrosselt im minimierten Fenster. Spart Strom und Abwärme, ohne dass Bewegungen ruckeln: Jede Eingabe schaltet sofort auf die volle Rate zurück.
+
+### Eigenschaften
+
+| Name | Typ | Beschreibung |
+|---|---|---|
+| `active_fps` | `int` | Bildrate, solange sich etwas tut (0 = unbegrenzt). Liegt die Bildwiederholrate des Monitors (mit V-Sync) nicht höher, begrenzt V-Sync allein. |
+| `idle_fps` | `int` | Bildrate in Ruhe: keine Eingabe und keine Nachricht der Engine seit `hold_seconds`. |
+| `minimized_fps` | `int` | Bildrate, solange das Fenster minimiert ist. |
+| `hold_seconds` | `float` | Sekunden nach der letzten Aktivität, bis auf `idle_fps` gedrosselt wird (lang genug für die Animationen, die eine Aktivität auslöst). |
 
 ## ManaFx
 

@@ -173,7 +173,7 @@ Deckauswahl und Formate übernimmt NeoForge.
 
 | Was | Befehl |
 |---|---|
-| Rust bauen | `cd rust && cargo build` |
+| Rust bauen | `cd rust && cargo build` (auch der dev-Build ist optimiert, `rust/Cargo.toml`: Godot lädt `target/debug/`) |
 | Unit-Tests | `cd rust && cargo test` |
 | Brücke bauen | `forge-bridge/build.sh` (nutzt `forge-bridge/forge/`, sonst `~/Games/Forge`) → `build/forge-bridge.jar` (Programm) + `build/forge-bridge-core.jar` (Bibliothek) |
 | Brücke von Hand | `forge-bridge/run.sh`, dann JSON-Zeilen tippen, z. B. `{"cmd":"ping"}` |
@@ -240,6 +240,13 @@ Mausklicks: nur für Optik verwenden, Spiellogik ohne Fenster prüfen, nie `warp
   reicht „{1}{U}“ im Text). Symbole aus dem Symbolbogen `Assets/Mana/Mana.svg`
   (`game/mana_symbols.rs`; farblos {C} aus `Assets/Mana/Colorless.svg`), nie „{…}“ als Text und keine eigenen Motive.
 - Godot-Logik in Rust (gdext), kein GDScript im Spiel (nur temporäre Testskripte).
+- **Sparsam je Bild** (Messungen und Begründung: `docs/DOCUMENTATION.md`, Abschnitt Performance):
+  In `process()`/`draw()` nur Geändertes setzen (Transformationen, Shader-Parameter,
+  Theme-Overrides, Sprites); Animationen am Ziel einrasten lassen. 2D-Anzeigen, die sich jedes Bild
+  bewegen, in ruhenden Teil (nur bei Änderung `queue_redraw`) und eigene animierte Ebene trennen;
+  viele Flächen über `game/tri_batch.rs` statt einzelner `draw_polygon`/`draw_circle`. Shader und
+  erzeugte Bilder über `table/shared.rs` teilen, nie `Shader::new_gd()` je Instanz. Was ohne Eingabe
+  oder Engine-Nachricht eine Animation startet, ruft `table::frame_pacer::wake()`.
 - Lizenz: das ganze Projekt ist GPL-3.0 wie Forge (`LICENSE`). Keinen Forge-Code in `rust/`
   übernehmen (die Grenze bleibt das Protokoll). `forge-bridge/forge/` (Jar + Kartendaten) nie
   committen. Bilder für README/Doku nur mit `CLASH_FREE_ASSETS=1` (keine Kartenbilder, keine

@@ -23,7 +23,7 @@
 use std::f32::consts::TAU;
 use std::ops::RangeInclusive;
 
-use godot::classes::control::MouseFilter;
+use godot::classes::control::{LayoutPreset, MouseFilter};
 use godot::classes::{Control, IControl};
 use godot::global::HorizontalAlignment;
 use godot::prelude::*;
@@ -75,8 +75,18 @@ pub struct PhaseTimeline {
     closing_r: Option<f32>,
     expand: f32,
     time: f32,
+    /// Zählt Änderungen der Phasennamen (für [`Look`]).
+    titles_gen: u32,
+    /// Eigene Ebene für die aktuelle Station mit ihrem pulsierenden Schein: Nur sie wird jedes
+    /// Bild neu gezeichnet, der übrige Zeitstrahl nur, wenn sich etwas daran ändert.
+    pulse_layer: Option<Gd<Control>>,
+    /// Stand, mit dem der Zeitstrahl zuletzt gezeichnet wurde.
+    drawn: Option<Look>,
     base: Base<Control>,
 }
+
+/// Alles, wovon der ruhende Zeitstrahl abhängt (aktuelle Phase, gleitende Werte, Namen).
+type Look = (i64, Option<f32>, Option<f32>, Option<f32>, f32, u32);
 
 /// Zustand einer Station relativ zur aktuellen Phase.
 #[derive(Clone, Copy, PartialEq)]
@@ -120,6 +130,9 @@ impl IControl for PhaseTimeline {
             closing_r: None,
             expand: 0.0,
             time: 0.0,
+            titles_gen: 0,
+            pulse_layer: None,
+            drawn: None,
             base,
         }
     }
@@ -127,6 +140,13 @@ impl IControl for PhaseTimeline {
     fn ready(&mut self) {
         self.base_mut().set_custom_minimum_size(Vector2::new(WIDTH, HEIGHT));
         self.base_mut().set_mouse_filter(MouseFilter::IGNORE);
+        let mut layer = Control::new_alloc();
+        layer.set_name("Pulse");
+        layer.set_anchors_preset(LayoutPreset::FULL_RECT);
+        layer.set_mouse_filter(MouseFilter::IGNORE);
+        layer.connect("draw", &Callable::from_object_method(&self.to_gd(), "draw_pulse"));
+        self.base_mut().add_child(&layer);
+        self.pulse_layer = Some(layer);
     }
 
     fn process(&mut self, delta: f64) {
@@ -153,10 +173,25 @@ impl IControl for PhaseTimeline {
             Some(x) if target >= x - 0.5 => x + (target - x) * k,
             _ => target,
         });
-        self.base_mut().queue_redraw();
+        // am Ziel einrasten, damit der ruhende Zeitstrahl bald nicht mehr neu gezeichnet wird
+        let snap = |v: f32, goal: f32| if (goal - v).abs() < 0.01 { goal } else { v };
+        self.opening_r = self.opening_r.map(|r| snap(r, target_r));
+        self.closing_r = self.closing_r.map(|r| snap(r, target_c));
+        self.expand = snap(self.expand, target_e);
+        self.marker_x = self.marker_x.map(|x| snap(x, target));
+        if self.drawn != Some(self.look()) {
+            self.base_mut().queue_redraw();
+        }
+        if self.current >= 0 {
+            if let Some(l) = self.pulse_layer.as_mut() {
+                l.queue_redraw();
+            }
+        }
     }
 
+    /// Ruhender Zeitstrahl ohne die aktuelle Station (die zeichnet `draw_pulse`).
     fn draw(&mut self) {
+        self.drawn = Some(self.look());
         let dots = self.dots();
         let marker = self.marker_x.unwrap_or(dots[0].x);
         let (x0, x1) = (dots[0].x, dots[dots.len() - 1].x);
@@ -167,34 +202,9 @@ impl IControl for PhaseTimeline {
             self.line(x0, marker, GOLD, 3.0);
         }
 
-        let pulse = 0.5 + 0.5 * (self.time * 3.0).sin();
-        for d in &dots {
-            if d.alpha < 0.02 {
-                continue;
-            }
-            let c = Vector2::new(d.x, LINE_Y);
-            let fade = |col: Color| Color::from_rgba(col.r, col.g, col.b, col.a * d.alpha);
-            let (fill, ink) = match d.state {
-                State::Done => {
-                    self.base_mut().draw_circle(c, d.r, fade(GOLD));
-                    (GOLD, ICON_DARK)
-                }
-                State::Upcoming => {
-                    self.base_mut().draw_circle(c, d.r, fade(HOLLOW));
-                    self.base_mut().draw_arc_ex(c, d.r, 0.0, TAU, 28, fade(DIM)).width(1.5).antialiased(true).done();
-                    (HOLLOW, DIM)
-                }
-                State::Current => {
-                    let glow = Color::from_rgba(GOLD.r, GOLD.g, GOLD.b, (0.18 + 0.15 * pulse) * d.alpha);
-                    self.base_mut().draw_circle(c, d.r + 4.0 + 2.0 * pulse, glow);
-                    self.base_mut().draw_circle(c, d.r, fade(Color::WHITE));
-                    self.base_mut().draw_arc_ex(c, d.r, 0.0, TAU, 28, fade(GOLD)).width(2.5).antialiased(true).done();
-                    (Color::WHITE, ICON_DARK)
-                }
-            };
-            if let Some(icon) = d.icon {
-                self.draw_icon(icon, c, d.r * 0.62, fade(ink), fill);
-            }
+        for d in dots.iter().filter(|d| d.state != State::Current) {
+            let mut me = self.base_mut();
+            draw_dot(&mut me, d, 0.0);
         }
 
         // Name der aktuellen Phase über der Linie (im Rahmen gehalten)
@@ -213,14 +223,61 @@ impl PhaseTimeline {
     /// Setzt Phasennamen (in Spielreihenfolge) und Index der aktuellen Phase (-1 = vor Spielbeginn).
     #[func]
     pub fn set_state(&mut self, titles: PackedStringArray, current: i64) {
-        if titles.len() != self.titles.len() || titles.as_slice().iter().zip(&self.titles).any(|(a, b)| a.to_string() != *b) {
+        if titles.len() != self.titles.len() || titles.as_slice().iter().zip(&self.titles).any(|(a, b)| *a != b.as_str()) {
             self.titles = titles.as_slice().iter().map(|t| t.to_string()).collect();
+            self.titles_gen = self.titles_gen.wrapping_add(1);
         }
         self.current = current;
+    }
+
+    /// Zeichnet die aktuelle Station mit pulsierendem Schein in die eigene Ebene (jedes Bild;
+    /// gerufen vom Signal `draw` der Ebene).
+    #[func]
+    fn draw_pulse(&mut self) {
+        let Some(mut layer) = self.pulse_layer.clone() else { return };
+        let pulse = 0.5 + 0.5 * (self.time * 3.0).sin();
+        for d in self.dots().iter().filter(|d| d.state == State::Current) {
+            draw_dot(&mut layer, d, pulse);
+        }
+    }
+}
+
+/// Zeichnet eine Station (Kreis, Rand, Symbol) auf `canvas`; `pulse` (0–1) = Stärke des Scheins
+/// der aktuellen Station.
+fn draw_dot(canvas: &mut Gd<Control>, d: &Dot, pulse: f32) {
+    if d.alpha < 0.02 {
+        return;
+    }
+    let c = Vector2::new(d.x, LINE_Y);
+    let fade = |col: Color| Color::from_rgba(col.r, col.g, col.b, col.a * d.alpha);
+    let (fill, ink) = match d.state {
+        State::Done => {
+            canvas.draw_circle(c, d.r, fade(GOLD));
+            (GOLD, ICON_DARK)
+        }
+        State::Upcoming => {
+            canvas.draw_circle(c, d.r, fade(HOLLOW));
+            canvas.draw_arc_ex(c, d.r, 0.0, TAU, 28, fade(DIM)).width(1.5).antialiased(true).done();
+            (HOLLOW, DIM)
+        }
+        State::Current => {
+            let glow = Color::from_rgba(GOLD.r, GOLD.g, GOLD.b, (0.18 + 0.15 * pulse) * d.alpha);
+            canvas.draw_circle(c, d.r + 4.0 + 2.0 * pulse, glow);
+            canvas.draw_circle(c, d.r, fade(Color::WHITE));
+            canvas.draw_arc_ex(c, d.r, 0.0, TAU, 28, fade(GOLD)).width(2.5).antialiased(true).done();
+            (Color::WHITE, ICON_DARK)
+        }
+    };
+    if let Some(icon) = d.icon {
+        draw_icon(canvas, icon, c, d.r * 0.62, fade(ink), fill);
     }
 }
 
 impl PhaseTimeline {
+    fn look(&self) -> Look {
+        (self.current, self.marker_x, self.opening_r, self.closing_r, self.expand, self.titles_gen)
+    }
+
     fn current_index(&self) -> Option<usize> {
         usize::try_from(self.current).ok()
     }
@@ -318,109 +375,6 @@ impl PhaseTimeline {
         }
     }
 
-    /// Zeichnet ein Schritt-Symbol mittig bei `c` (Größe `s` ≈ halbe Symbolbreite) in `ink`;
-    /// `bg` = Füllfarbe des Kreises (für die Aussparung der Mondsichel).
-    fn draw_icon(&mut self, icon: Icon, c: Vector2, s: f32, ink: Color, bg: Color) {
-        let w = (s * 0.28).max(1.2);
-        let mut b = self.base_mut();
-        match icon {
-            Icon::Untap => {
-                // Kreispfeil gegen den Uhrzeigersinn (Lücke oben rechts, Spitze zeigt nach oben)
-                let r = s * 0.78;
-                let (a0, a1) = (-0.35 * std::f32::consts::PI, 1.25 * std::f32::consts::PI);
-                b.draw_arc_ex(c, r, a0, a1, 20, ink).width(w).antialiased(true).done();
-                let tip = c + Vector2::new(a0.cos(), a0.sin()) * r;
-                let along = Vector2::new(a0.sin(), -a0.cos()); // Laufrichtung am Bogenanfang (gegen den Uhrzeigersinn)
-                let side = Vector2::new(a0.cos(), a0.sin());
-                let head = [tip + along * (s * 0.55), tip + side * (s * 0.42), tip - side * (s * 0.42)];
-                b.draw_colored_polygon(&PackedVector2Array::from(&head[..]), ink);
-            }
-            Icon::Upkeep => {
-                // Sonne: Scheibe mit acht Strahlen
-                b.draw_circle(c, s * 0.42, ink);
-                for k in 0..8 {
-                    let a = k as f32 * TAU / 8.0;
-                    let d = Vector2::new(a.cos(), a.sin());
-                    b.draw_line_ex(c + d * (s * 0.62), c + d * (s * 0.95), ink).width(w * 0.8).antialiased(true).done();
-                }
-            }
-            Icon::Draw => {
-                // Karte (Hochformat) mit kleinem Plus
-                let size = Vector2::new(s * 1.05, s * 1.45);
-                let rect = Rect2::new(c - size * 0.5 - Vector2::new(s * 0.18, 0.0), size);
-                b.draw_rect_ex(rect, ink).filled(false).width(w).done();
-                let p = c + Vector2::new(s * 0.62, -s * 0.45);
-                b.draw_line_ex(p - Vector2::new(s * 0.3, 0.0), p + Vector2::new(s * 0.3, 0.0), ink).width(w).done();
-                b.draw_line_ex(p - Vector2::new(0.0, s * 0.3), p + Vector2::new(0.0, s * 0.3), ink).width(w).done();
-            }
-            Icon::Main => {
-                // Drei aufgefächerte Karten
-                for k in [-1.0f32, 0.0, 1.0] {
-                    let a = k * 0.38;
-                    let (sin, cos) = a.sin_cos();
-                    let rot = |p: Vector2| c + Vector2::new(0.0, s * 0.35) + Vector2::new(p.x * cos - p.y * sin, p.x * sin + p.y * cos);
-                    let (hw, h) = (s * 0.36, s * 1.2);
-                    let quad = [rot(Vector2::new(-hw, -h)), rot(Vector2::new(hw, -h)), rot(Vector2::new(hw, 0.0)), rot(Vector2::new(-hw, 0.0))];
-                    b.draw_colored_polygon(&PackedVector2Array::from(&quad[..]), bg);
-                    let outline = [quad[0], quad[1], quad[2], quad[3], quad[0]];
-                    b.draw_polyline_ex(&PackedVector2Array::from(&outline[..]), ink).width(w * 0.8).antialiased(true).done();
-                }
-            }
-            Icon::End => {
-                // Mondsichel: Scheibe, davon eine versetzte Scheibe in Hintergrundfarbe ausgespart
-                b.draw_circle(c, s * 0.8, ink);
-                b.draw_circle(c + Vector2::new(s * 0.38, -s * 0.22), s * 0.68, bg);
-            }
-            Icon::Attack => {
-                // Einzelnes Schwert, schräg (Spitze oben rechts)
-                let tip = c + Vector2::new(s * 0.85, -s * 0.85);
-                let hilt = c + Vector2::new(-s * 0.8, s * 0.8);
-                b.draw_line_ex(hilt, tip, ink).width(w).antialiased(true).done();
-                let g = c + Vector2::new(-s * 0.4, s * 0.4);
-                let n = Vector2::new(1.0, 1.0).normalized() * (s * 0.38);
-                b.draw_line_ex(g - n, g + n, ink).width(w).antialiased(true).done();
-            }
-            Icon::Block => {
-                // Schild: oben gerade Kante, Seiten nach unten zur Spitze zulaufend
-                let pts: Vec<Vector2> = [
-                    (-0.8, -0.8), (0.8, -0.8), (0.78, -0.1), (0.55, 0.45), (0.0, 0.95), (-0.55, 0.45), (-0.78, -0.1),
-                ]
-                .iter()
-                .map(|(x, y)| c + Vector2::new(*x, *y) * s)
-                .collect();
-                b.draw_colored_polygon(&PackedVector2Array::from(&pts[..]), ink);
-                // Mittelstreifen in Hintergrundfarbe
-                b.draw_line_ex(c + Vector2::new(0.0, -0.6) * s, c + Vector2::new(0.0, 0.62) * s, bg).width(w * 0.7).done();
-            }
-            Icon::Damage => {
-                // Flamme: Tropfenform mit Spitze nach oben, innen eine kleinere Flamme ausgespart
-                // Tropfenkurve: x = sin t · sin(t/2), y = −cos t → Spitze oben, unten rund
-                let flame = |scale: f32, off: Vector2| -> Vec<Vector2> {
-                    (0..24)
-                        .map(|i| {
-                            let t = i as f32 / 24.0 * TAU;
-                            let p = Vector2::new(0.78 * t.sin() * (t * 0.5).sin(), -0.95 * t.cos());
-                            c + off + p * (s * scale)
-                        })
-                        .collect()
-                };
-                b.draw_colored_polygon(&PackedVector2Array::from(&flame(1.0, Vector2::ZERO)[..]), ink);
-                b.draw_colored_polygon(&PackedVector2Array::from(&flame(0.45, Vector2::new(0.0, s * 0.25))[..]), bg);
-            }
-            Icon::Combat => {
-                // Zwei gekreuzte Schwerter (Klinge + Parierstange)
-                for dir in [1.0f32, -1.0] {
-                    let tip = c + Vector2::new(dir * s * 0.8, -s * 0.8);
-                    let hilt = c + Vector2::new(-dir * s * 0.75, s * 0.75);
-                    b.draw_line_ex(hilt, tip, ink).width(w).antialiased(true).done();
-                    let g = c + Vector2::new(-dir * s * 0.4, s * 0.4);
-                    let n = Vector2::new(dir, dir).normalized() * (s * 0.3);
-                    b.draw_line_ex(g - n, g + n, ink).width(w).antialiased(true).done();
-                }
-            }
-        }
-    }
-
     fn line(&mut self, from: f32, to: f32, color: Color, width: f32) {
         if to <= from {
             return;
@@ -452,5 +406,107 @@ impl PhaseTimeline {
             .font_size(size)
             .modulate(color)
             .done();
+    }
+}
+
+/// Zeichnet ein Schritt-Symbol mittig bei `c` (Größe `s` ≈ halbe Symbolbreite) in `ink`;
+/// `bg` = Füllfarbe des Kreises (für die Aussparung der Mondsichel).
+fn draw_icon(b: &mut Gd<Control>, icon: Icon, c: Vector2, s: f32, ink: Color, bg: Color) {
+    let w = (s * 0.28).max(1.2);
+    match icon {
+        Icon::Untap => {
+            // Kreispfeil gegen den Uhrzeigersinn (Lücke oben rechts, Spitze zeigt nach oben)
+            let r = s * 0.78;
+            let (a0, a1) = (-0.35 * std::f32::consts::PI, 1.25 * std::f32::consts::PI);
+            b.draw_arc_ex(c, r, a0, a1, 20, ink).width(w).antialiased(true).done();
+            let tip = c + Vector2::new(a0.cos(), a0.sin()) * r;
+            let along = Vector2::new(a0.sin(), -a0.cos()); // Laufrichtung am Bogenanfang (gegen den Uhrzeigersinn)
+            let side = Vector2::new(a0.cos(), a0.sin());
+            let head = [tip + along * (s * 0.55), tip + side * (s * 0.42), tip - side * (s * 0.42)];
+            b.draw_colored_polygon(&PackedVector2Array::from(&head[..]), ink);
+        }
+        Icon::Upkeep => {
+            // Sonne: Scheibe mit acht Strahlen
+            b.draw_circle(c, s * 0.42, ink);
+            for k in 0..8 {
+                let a = k as f32 * TAU / 8.0;
+                let d = Vector2::new(a.cos(), a.sin());
+                b.draw_line_ex(c + d * (s * 0.62), c + d * (s * 0.95), ink).width(w * 0.8).antialiased(true).done();
+            }
+        }
+        Icon::Draw => {
+            // Karte (Hochformat) mit kleinem Plus
+            let size = Vector2::new(s * 1.05, s * 1.45);
+            let rect = Rect2::new(c - size * 0.5 - Vector2::new(s * 0.18, 0.0), size);
+            b.draw_rect_ex(rect, ink).filled(false).width(w).done();
+            let p = c + Vector2::new(s * 0.62, -s * 0.45);
+            b.draw_line_ex(p - Vector2::new(s * 0.3, 0.0), p + Vector2::new(s * 0.3, 0.0), ink).width(w).done();
+            b.draw_line_ex(p - Vector2::new(0.0, s * 0.3), p + Vector2::new(0.0, s * 0.3), ink).width(w).done();
+        }
+        Icon::Main => {
+            // Drei aufgefächerte Karten
+            for k in [-1.0f32, 0.0, 1.0] {
+                let a = k * 0.38;
+                let (sin, cos) = a.sin_cos();
+                let rot = |p: Vector2| c + Vector2::new(0.0, s * 0.35) + Vector2::new(p.x * cos - p.y * sin, p.x * sin + p.y * cos);
+                let (hw, h) = (s * 0.36, s * 1.2);
+                let quad = [rot(Vector2::new(-hw, -h)), rot(Vector2::new(hw, -h)), rot(Vector2::new(hw, 0.0)), rot(Vector2::new(-hw, 0.0))];
+                b.draw_colored_polygon(&PackedVector2Array::from(&quad[..]), bg);
+                let outline = [quad[0], quad[1], quad[2], quad[3], quad[0]];
+                b.draw_polyline_ex(&PackedVector2Array::from(&outline[..]), ink).width(w * 0.8).antialiased(true).done();
+            }
+        }
+        Icon::End => {
+            // Mondsichel: Scheibe, davon eine versetzte Scheibe in Hintergrundfarbe ausgespart
+            b.draw_circle(c, s * 0.8, ink);
+            b.draw_circle(c + Vector2::new(s * 0.38, -s * 0.22), s * 0.68, bg);
+        }
+        Icon::Attack => {
+            // Einzelnes Schwert, schräg (Spitze oben rechts)
+            let tip = c + Vector2::new(s * 0.85, -s * 0.85);
+            let hilt = c + Vector2::new(-s * 0.8, s * 0.8);
+            b.draw_line_ex(hilt, tip, ink).width(w).antialiased(true).done();
+            let g = c + Vector2::new(-s * 0.4, s * 0.4);
+            let n = Vector2::new(1.0, 1.0).normalized() * (s * 0.38);
+            b.draw_line_ex(g - n, g + n, ink).width(w).antialiased(true).done();
+        }
+        Icon::Block => {
+            // Schild: oben gerade Kante, Seiten nach unten zur Spitze zulaufend
+            let pts: Vec<Vector2> = [
+                (-0.8, -0.8), (0.8, -0.8), (0.78, -0.1), (0.55, 0.45), (0.0, 0.95), (-0.55, 0.45), (-0.78, -0.1),
+            ]
+            .iter()
+            .map(|(x, y)| c + Vector2::new(*x, *y) * s)
+            .collect();
+            b.draw_colored_polygon(&PackedVector2Array::from(&pts[..]), ink);
+            // Mittelstreifen in Hintergrundfarbe
+            b.draw_line_ex(c + Vector2::new(0.0, -0.6) * s, c + Vector2::new(0.0, 0.62) * s, bg).width(w * 0.7).done();
+        }
+        Icon::Damage => {
+            // Flamme: Tropfenform mit Spitze nach oben, innen eine kleinere Flamme ausgespart
+            // Tropfenkurve: x = sin t · sin(t/2), y = −cos t → Spitze oben, unten rund
+            let flame = |scale: f32, off: Vector2| -> Vec<Vector2> {
+                (0..24)
+                    .map(|i| {
+                        let t = i as f32 / 24.0 * TAU;
+                        let p = Vector2::new(0.78 * t.sin() * (t * 0.5).sin(), -0.95 * t.cos());
+                        c + off + p * (s * scale)
+                    })
+                    .collect()
+            };
+            b.draw_colored_polygon(&PackedVector2Array::from(&flame(1.0, Vector2::ZERO)[..]), ink);
+            b.draw_colored_polygon(&PackedVector2Array::from(&flame(0.45, Vector2::new(0.0, s * 0.25))[..]), bg);
+        }
+        Icon::Combat => {
+            // Zwei gekreuzte Schwerter (Klinge + Parierstange)
+            for dir in [1.0f32, -1.0] {
+                let tip = c + Vector2::new(dir * s * 0.8, -s * 0.8);
+                let hilt = c + Vector2::new(-dir * s * 0.75, s * 0.75);
+                b.draw_line_ex(hilt, tip, ink).width(w).antialiased(true).done();
+                let g = c + Vector2::new(-dir * s * 0.4, s * 0.4);
+                let n = Vector2::new(dir, dir).normalized() * (s * 0.3);
+                b.draw_line_ex(g - n, g + n, ink).width(w).antialiased(true).done();
+            }
+        }
     }
 }

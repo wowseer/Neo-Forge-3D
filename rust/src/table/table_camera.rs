@@ -90,7 +90,21 @@ impl ICamera3D for TableCamera {
 
         let w = 1.0 - (-self.smoothing * delta as f32).exp();
         let current = self.base().get_global_transform();
-        let next = current.interpolate_with(&desired, w);
+        let close = |a: &Transform3D| {
+            (a.origin - desired.origin).length() < 1e-4
+                && (a.basis.col_a() - desired.basis.col_a()).length() < 1e-5
+                && (a.basis.col_b() - desired.basis.col_b()).length() < 1e-5
+                && (a.basis.col_c() - desired.basis.col_c()).length() < 1e-5
+        };
+        if close(&current) {
+            // in Ruhe: nichts setzen (die Vordergrund-Kamera steht schon gleich)
+            return;
+        }
+        let mut next = current.interpolate_with(&desired, w);
+        // am Ziel einrasten, sonst nähert sich die Kamera endlos in winzigen Schritten an
+        if close(&next) {
+            next = desired;
+        }
         self.base_mut().set_global_transform(next);
         self.sync_foreground();
     }

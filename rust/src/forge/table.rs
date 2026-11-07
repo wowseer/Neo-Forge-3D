@@ -428,6 +428,7 @@ impl INode for ForgeTable {
         placeholder::clear_printed();
         crate::game::mana_symbols::clear();
         crate::table::dungeon_view::clear();
+        crate::table::shared::clear();
     }
 
     fn process(&mut self, delta: f64) {

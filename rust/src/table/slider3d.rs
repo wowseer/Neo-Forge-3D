@@ -8,7 +8,7 @@
 //! die Schiene springt dorthin. Wert 0 = ganz links, 1 = ganz rechts.
 
 use godot::classes::geometry_instance_3d::ShadowCastingSetting;
-use godot::classes::{Area3D, BoxShape3D, CollisionShape3D, IArea3D, MeshInstance3D, QuadMesh, Shader, ShaderMaterial};
+use godot::classes::{Area3D, BoxShape3D, CollisionShape3D, IArea3D, MeshInstance3D, QuadMesh, ShaderMaterial};
 use godot::prelude::*;
 
 use super::layers::CONTROL_LAYER;
@@ -195,8 +195,7 @@ impl Slider3D {
 
 /// Fläche mit Shader `code` in Größe `size` (+ Rand `margin` für den Schein), Vorderseite +Z.
 fn quad(code: &str, size: Vector2, margin: Vector2) -> (Gd<MeshInstance3D>, Gd<ShaderMaterial>) {
-    let mut shader = Shader::new_gd();
-    shader.set_code(code);
+    let shader = crate::table::shared::shader(code);
     let mut mat = ShaderMaterial::new_gd();
     mat.set_shader(&shader);
     mat.set_shader_parameter("size", &size.to_variant());

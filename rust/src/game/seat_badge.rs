@@ -6,16 +6,21 @@
 //! den Rahmen, links und rechts davon zwei Metall-Klingen. Wer am Zug ist, bekommt einen
 //! goldenen Strahlenkranz; Lebensänderungen blitzen kurz auf (rot = Schaden, grün = Heilung).
 //! Ist der Spieler ein gültiges Ziel, pulsiert ein goldener Ring und das Medaillon ist
-//! anklickbar (Signal `clicked`). Alles wird per `draw()` gezeichnet; die Größe folgt der
+//! anklickbar (Signal `clicked`). Das ruhende Medaillon zeichnet `draw()` nur bei Änderungen,
+//! Zielring, Strahlen und Augen jedes Bild in eigene Ebenen; die Größe folgt der
 //! Fensterhöhe (Maße für 1080 Pixel).
 
 use std::f32::consts::{PI, TAU};
 
 use godot::classes::control::MouseFilter;
-use godot::classes::{Control, Font, Geometry2D, IControl, InputEvent, InputEventMouseButton, SystemFont, Texture2D};
+use godot::classes::{
+    Control, Font, Geometry2D, IControl, InputEvent, InputEventMouseButton, RenderingServer, SystemFont, Texture2D,
+};
 use godot::global::HorizontalAlignment;
 use godot::global::MouseButton;
 use godot::prelude::*;
+
+use super::tri_batch::TriBatch;
 
 /// Maße bei 1080 Pixel Fensterhöhe: Außenradius des Rahmens, Breite des Metallrings, Abstand
 /// des Ringmittelpunkts vom oberen Rand und Größe der Lebens-Plakette.
@@ -80,7 +85,25 @@ pub struct SeatBadge {
     /// Maßstab (Fensterhöhe / 1080).
     k: f32,
     life_font: Option<Gd<Font>>,
+    /// Animierte Ebenen (eigene CanvasItems, Kinder des Medaillons): hinten Zielring und
+    /// Strahlenkranz, vorn die Augen der Figur. Nur sie werden jedes Bild neu gezeichnet, das
+    /// übrige Medaillon nur, wenn sich daran etwas ändert (siehe [`StaticLook`]).
+    layers: Option<(Rid, Rid)>,
+    /// Stand, mit dem das ruhende Medaillon zuletzt gezeichnet wurde.
+    drawn: Option<StaticLook>,
     base: Base<Control>,
+}
+
+/// Alles, wovon das ruhende Medaillon (Klingen, Porträt, Ring, Figur, Plakette) abhängt: Ändert
+/// sich etwas davon, wird es neu gezeichnet.
+#[derive(Clone, PartialEq)]
+struct StaticLook {
+    life: i64,
+    accent: Color,
+    portrait: Option<InstanceId>,
+    k: f32,
+    flash: f32,
+    size: Vector2,
 }
 
 #[godot_api]
@@ -99,7 +122,31 @@ impl IControl for SeatBadge {
             flash_color: Color::WHITE,
             k: 0.0,
             life_font: None,
+            layers: None,
+            drawn: None,
             base,
+        }
+    }
+
+    fn enter_tree(&mut self) {
+        let mut rs = RenderingServer::singleton();
+        let me = self.base().get_canvas_item();
+        let behind = rs.canvas_item_create();
+        let front = rs.canvas_item_create();
+        for layer in [behind, front] {
+            rs.canvas_item_set_parent(layer, me);
+            // Aussparung der Medaillon-Maske ([CardCutout]) gilt auch hier
+            rs.canvas_item_set_use_parent_material(layer, true);
+        }
+        rs.canvas_item_set_draw_behind_parent(behind, true);
+        self.layers = Some((behind, front));
+    }
+
+    fn exit_tree(&mut self) {
+        if let Some((behind, front)) = self.layers.take() {
+            let mut rs = RenderingServer::singleton();
+            rs.free_rid(behind);
+            rs.free_rid(front);
         }
     }
 
@@ -129,33 +176,27 @@ impl IControl for SeatBadge {
         self.time += delta as f32;
         self.flash = (self.flash - delta as f32).max(0.0);
         self.update_scale();
-        self.base_mut().queue_redraw();
+        if self.drawn.as_ref() != Some(&self.static_look()) {
+            self.base_mut().queue_redraw();
+        }
+        self.draw_layers();
     }
 
+    /// Ruhendes Medaillon: Klingen, Porträt, Ring, Figur und Plakette (Zielring, Strahlen und
+    /// Augen zeichnet `draw_layers` jedes Bild in eigene Ebenen).
     fn draw(&mut self) {
-        let k = self.k.max(0.1);
-        let size = self.base().get_size();
-        let c = Vector2::new(size.x * 0.5, (TOP + RING_R) * k);
-        let r = RING_R * k;
+        self.drawn = Some(self.static_look());
+        let (c, r, k) = self.geometry();
 
-        // Zielwahl: goldener Ring (pulsierend = wählbar, ruhig und hell = gewählt)
-        if self.targetable || self.target_selected {
-            let pulse = 0.5 + 0.5 * (self.time * 4.0).sin();
-            let (alpha, grow) = if self.target_selected { (0.95, 9.0) } else { (0.45 + 0.4 * pulse, 6.0 + 4.0 * pulse) };
-            let ring = Color::from_rgba(1.0, 0.82, 0.35, alpha);
-            self.base_mut().draw_arc_ex(c, r + grow * k, 0.0, TAU, 72, ring).width(5.0 * k).antialiased(true).done();
-        }
-
-        if self.active {
-            self.draw_rays(c, r);
-        }
-        self.draw_wings(c + Vector2::new(0.0, PLATE_DROP * k), k);
-        self.draw_portrait(c, r - RING_W * k);
-        self.draw_ring(c, r, k);
+        // Flächen gesammelt zeichnen (ein Befehl statt hunderter, siehe TriBatch)
+        let mut batch = TriBatch::new(self.base().get_canvas_item());
+        self.draw_wings(&mut batch, c + Vector2::new(0.0, PLATE_DROP * k), k);
+        self.draw_portrait(&mut batch, c, r - RING_W * k);
+        self.draw_ring(&mut batch, c, r, k);
         if self.portrait.is_none() {
-            self.draw_figure(c, r - RING_W * k);
+            self.draw_figure(&mut batch, c, r - RING_W * k);
         }
-        self.draw_plate(c + Vector2::new(0.0, PLATE_DROP * k), k);
+        self.draw_plate(&mut batch, c + Vector2::new(0.0, PLATE_DROP * k), k);
     }
 }
 
@@ -193,6 +234,56 @@ impl SeatBadge {
 }
 
 impl SeatBadge {
+    /// Mittelpunkt und Außenradius des Rings sowie Maßstab.
+    fn geometry(&self) -> (Vector2, f32, f32) {
+        let k = self.k.max(0.1);
+        let size = self.base().get_size();
+        (Vector2::new(size.x * 0.5, (TOP + RING_R) * k), RING_R * k, k)
+    }
+
+    fn static_look(&self) -> StaticLook {
+        StaticLook {
+            life: self.life,
+            accent: self.accent,
+            portrait: self.portrait.as_ref().map(|p| p.instance_id()),
+            k: self.k,
+            flash: self.flash,
+            size: self.base().get_size(),
+        }
+    }
+
+    /// Animierte Ebenen neu zeichnen: hinten Zielring (pulsierend = wählbar, ruhig und hell =
+    /// gewählt) und Strahlenkranz (am Zug), vorn die flackernden Augen der Figur.
+    fn draw_layers(&mut self) {
+        let Some((behind, front)) = self.layers else { return };
+        if !self.base().is_visible_in_tree() {
+            return;
+        }
+        let mut rs = RenderingServer::singleton();
+        rs.canvas_item_clear(behind);
+        rs.canvas_item_clear(front);
+        let (c, r, k) = self.geometry();
+        if self.targetable || self.target_selected {
+            let pulse = 0.5 + 0.5 * (self.time * 4.0).sin();
+            let (alpha, grow) = if self.target_selected { (0.95, 9.0) } else { (0.45 + 0.4 * pulse, 6.0 + 4.0 * pulse) };
+            let ring = Color::from_rgba(1.0, 0.82, 0.35, alpha);
+            // wie draw_arc: 72 Punkte, der letzte schließt den Kreis
+            let pts: Vec<Vector2> = (0..72).map(|i| c + Vector2::from_angle(i as f32 / 71.0 * TAU) * (r + grow * k)).collect();
+            rs.canvas_item_add_polyline_ex(behind, &PackedVector2Array::from(pts.as_slice()), &PackedColorArray::from(&[ring]))
+                .width(5.0 * k)
+                .antialiased(true)
+                .done();
+        }
+        if self.active {
+            let mut batch = TriBatch::new(behind);
+            self.draw_rays(&mut batch, c, r);
+        }
+        if self.portrait.is_none() {
+            let mut batch = TriBatch::new(front);
+            self.draw_eyes(&mut batch, c, r - RING_W * k);
+        }
+    }
+
     /// Maßstab aus der Fensterhöhe; ändert er sich, wächst bzw. schrumpft die Mindestgröße mit.
     fn update_scale(&mut self) {
         let h = self.base().get_viewport_rect().size.y;
@@ -205,12 +296,12 @@ impl SeatBadge {
     }
 
     /// Goldener Strahlenkranz (am Zug): weicher Schein und sich langsam drehende Strahlen.
-    fn draw_rays(&mut self, c: Vector2, r: f32) {
+    fn draw_rays(&self, batch: &mut TriBatch, c: Vector2, r: f32) {
         let pulse = 0.75 + 0.25 * (self.time * 2.5).sin();
         for i in 0..8 {
             let t = i as f32 / 8.0;
             let a = 0.09 * pulse;
-            self.base_mut().draw_circle(c + Vector2::new(0.0, -0.2 * r * t), r * (1.6 - 0.6 * t), Color::from_rgba(1.0, 0.86, 0.5 + 0.3 * t, a));
+            batch.circle(c + Vector2::new(0.0, -0.2 * r * t), r * (1.6 - 0.6 * t), Color::from_rgba(1.0, 0.86, 0.5 + 0.3 * t, a));
         }
         let spin = self.time * 0.2;
         let n = 28;
@@ -221,23 +312,24 @@ impl SeatBadge {
             let pts = [c, c + Vector2::from_angle(a - half) * len, c + Vector2::from_angle(a + half) * len];
             let core = Color::from_rgba(1.0, 0.93, 0.7, 0.75 * pulse);
             let tip = Color::from_rgba(1.0, 0.8, 0.4, 0.0);
-            self.base_mut().draw_polygon(&PackedVector2Array::from(&pts), &PackedColorArray::from(&[core, tip, tip]));
+            batch.polygon(&pts, &[core, tip, tip]);
         }
     }
 
     /// Zwei Klingen je Seite auf Höhe der Plakette: hinten Gold, vorn Silber.
-    fn draw_wings(&mut self, p: Vector2, k: f32) {
+    fn draw_wings(&mut self, batch: &mut TriBatch, p: Vector2, k: f32) {
         for side in [-1.0f32, 1.0] {
             let at = |x: f32, y: f32| p + Vector2::new(side * x, y) * k;
             // hintere, goldene Klinge (etwas tiefer, schräg nach unten)
             let back = [at(30.0, -6.0), at(WING_REACH - 6.0, 14.0), at(74.0, 18.0), at(34.0, 20.0)];
             let gold = [GOLD_LIGHT, GOLD_DARK.lerp(GOLD_LIGHT, 0.5), GOLD_DARK, GOLD_DARK];
-            self.base_mut().draw_polygon(&PackedVector2Array::from(&back), &PackedColorArray::from(&gold));
+            batch.polygon(&back, &gold);
             // vordere, silberne Klinge mit Spitze nach außen
             let front = [at(32.0, -16.0), at(WING_REACH, -2.0), at(36.0, 10.0)];
             let silver = [SILVER_LIGHT, SILVER_LIGHT.lerp(SILVER_DARK, 0.3), SILVER_DARK];
-            self.base_mut().draw_polygon(&PackedVector2Array::from(&front), &PackedColorArray::from(&silver));
+            batch.polygon(&front, &silver);
             let edge = [at(32.0, -16.0), at(WING_REACH, -2.0), at(36.0, 10.0), at(32.0, -16.0)];
+            batch.flush();
             self.base_mut()
                 .draw_polyline_ex(&PackedVector2Array::from(&edge), Color::from_rgba(0.1, 0.1, 0.12, 0.6))
                 .width(1.2 * k)
@@ -247,9 +339,10 @@ impl SeatBadge {
     }
 
     /// Porträtfläche: eigenes Bild bzw. Figur mit Kapuze in der Seitenfarbe vor einem Verlauf.
-    fn draw_portrait(&mut self, c: Vector2, r: f32) {
+    fn draw_portrait(&mut self, batch: &mut TriBatch, c: Vector2, r: f32) {
         let circle = circle_points(c, r, 64);
         if let Some(tex) = self.portrait.clone() {
+            batch.flush();
             let uvs: Vec<Vector2> = circle.iter().map(|p| (*p - c) / (2.0 * r) + Vector2::splat(0.5)).collect();
             let white = vec![Color::WHITE; circle.len()];
             self.base_mut()
@@ -265,11 +358,11 @@ impl SeatBadge {
         let at = |x: f32, y: f32| c + Vector2::new(x, y) * s;
 
         // Hintergrund: dunkler Grund, nach oben heller (Licht hinter dem Kopf)
-        self.base_mut().draw_circle(c, r, shade(0.16));
+        batch.circle(c, r, shade(0.16));
         for i in 0..10 {
             let t = i as f32 / 10.0;
             let col = shade(0.16).lerp(accent.lerp(Color::WHITE, 0.35), (t * 0.55) as f64);
-            self.base_mut().draw_circle(at(0.0, -14.0 * t), r * (1.0 - t) * 0.95, col);
+            batch.circle(at(0.0, -14.0 * t), r * (1.0 - t) * 0.95, col);
         }
 
         // Schultern: Ellipse unten, am Kreis abgeschnitten
@@ -282,13 +375,13 @@ impl SeatBadge {
         let clipped = Geometry2D::singleton()
             .intersect_polygons(&PackedVector2Array::from(shoulders.as_slice()), &PackedVector2Array::from(circle.as_slice()));
         for poly in clipped.iter_shared() {
-            self.base_mut().draw_colored_polygon(&poly, shade(0.42));
+            batch.colored_polygon(poly.as_slice(), shade(0.42));
         }
     }
 
     /// Figur mit Kapuze vor dem Porträt-Grund; die Spitze der Kapuze ragt über den Ring hinaus
     /// (wie im Video), deshalb nach dem Ring gezeichnet.
-    fn draw_figure(&mut self, c: Vector2, r: f32) {
+    fn draw_figure(&mut self, batch: &mut TriBatch, c: Vector2, r: f32) {
         let accent = self.accent;
         let shade = |f: f32| Color::from_rgba(accent.r * f, accent.g * f, accent.b * f, 1.0);
         let s = r / 55.0;
@@ -312,9 +405,10 @@ impl SeatBadge {
         let mid = accent.lerp(Color::WHITE, 0.15);
         let dark = shade(0.45);
         let cols = [dark, mid, mid, light, light, light, light, light, mid, mid, dark, dark];
-        self.base_mut().draw_polygon(&PackedVector2Array::from(&hood), &PackedColorArray::from(&cols));
+        batch.polygon(&hood, &cols);
         // Faltenlinie der Kapuze
         let fold = [at(-7.0, -50.0), at(0.0, -26.0), at(7.0, -50.0)];
+        batch.flush();
         self.base_mut()
             .draw_polyline_ex(&PackedVector2Array::from(&fold), Color::from_rgba(1.0, 1.0, 1.0, 0.25))
             .width(1.5 * s)
@@ -322,18 +416,24 @@ impl SeatBadge {
             .done();
 
         // Rand der Kapuzenöffnung, Gesicht im Schatten, darin leuchtende Augen
-        self.base_mut().draw_ellipse(at(0.0, 1.0), 19.0 * s, 25.0 * s, shade(0.3));
-        self.base_mut().draw_ellipse(at(0.0, 0.0), 15.0 * s, 21.0 * s, Color::from_rgb(0.03, 0.03, 0.05));
-        let glow = accent.lerp(Color::WHITE, 0.6);
+        batch.ellipse(at(0.0, 1.0), 19.0 * s, 25.0 * s, shade(0.3));
+        batch.ellipse(at(0.0, 0.0), 15.0 * s, 21.0 * s, Color::from_rgb(0.03, 0.03, 0.05));
+    }
+
+    /// Leuchtende, leicht flackernde Augen im Gesicht der Figur (animiert, vordere Ebene).
+    fn draw_eyes(&self, batch: &mut TriBatch, c: Vector2, r: f32) {
+        let s = r / 55.0;
+        let at = |x: f32, y: f32| c + Vector2::new(x, y) * s;
+        let glow = self.accent.lerp(Color::WHITE, 0.6);
         let flicker = 0.85 + 0.15 * (self.time * 3.1).sin();
         for x in [-6.5f32, 6.5] {
-            self.base_mut().draw_ellipse(at(x, -3.0), 6.0 * s, 3.5 * s, Color::from_rgba(glow.r, glow.g, glow.b, 0.25 * flicker));
-            self.base_mut().draw_ellipse(at(x, -3.0), 3.4 * s, 1.4 * s, Color::from_rgba(glow.r, glow.g, glow.b, flicker));
+            batch.ellipse(at(x, -3.0), 6.0 * s, 3.5 * s, Color::from_rgba(glow.r, glow.g, glow.b, 0.25 * flicker));
+            batch.ellipse(at(x, -3.0), 3.4 * s, 1.4 * s, Color::from_rgba(glow.r, glow.g, glow.b, flicker));
         }
     }
 
     /// Metallring: von links oben beleuchtet (Licht → Gold hell, unten rechts dunkel), dunkle Kanten.
-    fn draw_ring(&mut self, c: Vector2, r: f32, k: f32) {
+    fn draw_ring(&mut self, batch: &mut TriBatch, c: Vector2, r: f32, k: f32) {
         let inner = r - RING_W * k;
         let n = 72;
         let light_dir = -0.75 * PI; // links oben
@@ -349,8 +449,9 @@ impl SeatBadge {
                 c + Vector2::from_angle(a1) * inner,
             ];
             let cols = [col(a0 + PI) , col(a0), col(a1), col(a1 + PI)];
-            self.base_mut().draw_polygon(&PackedVector2Array::from(&pts), &PackedColorArray::from(&cols));
+            batch.polygon(&pts, &cols);
         }
+        batch.flush();
         let edge = Color::from_rgba(0.12, 0.08, 0.04, 0.9);
         self.base_mut().draw_arc_ex(c, r, 0.0, TAU, 72, edge).width(2.2 * k).antialiased(true).done();
         self.base_mut().draw_arc_ex(c, inner, 0.0, TAU, 72, edge).width(2.0 * k).antialiased(true).done();
@@ -365,7 +466,7 @@ impl SeatBadge {
 
     /// Lebens-Plakette: dunkles, abgerundetes Schild mit hellem Rand, Zahl in Serifenschrift.
     /// Nach einer Lebensänderung färbt sie sich kurz rot bzw. grün und die Zahl springt auf.
-    fn draw_plate(&mut self, p: Vector2, k: f32) {
+    fn draw_plate(&mut self, batch: &mut TriBatch, p: Vector2, k: f32) {
         let t = self.flash / FLASH_TIME;
         let grow = 1.0 + 0.12 * t;
         let (w, h) = (PLATE_W * k * grow, PLATE_H * k * grow);
@@ -373,9 +474,10 @@ impl SeatBadge {
         let top = PLATE_TOP.lerp(self.flash_color, (t * 0.85) as f64);
         let bottom = PLATE_BOTTOM.lerp(self.flash_color.darkened(0.5), (t * 0.85) as f64);
         let cols: Vec<Color> = shape.iter().map(|q| top.lerp(bottom, (((q.y - (p.y - h * 0.5)) / h).clamp(0.0, 1.0)) as f64)).collect();
-        self.base_mut().draw_polygon(&PackedVector2Array::from(shape.as_slice()), &PackedColorArray::from(cols.as_slice()));
+        batch.polygon(&shape, &cols);
         let mut edge = shape.clone();
         edge.push(shape[0]);
+        batch.flush();
         self.base_mut()
             .draw_polyline_ex(&PackedVector2Array::from(edge.as_slice()), SILVER_LIGHT.lerp(GOLD_DARK, 0.35))
             .width(2.2 * k)

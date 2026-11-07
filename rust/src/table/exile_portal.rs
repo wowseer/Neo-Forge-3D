@@ -7,7 +7,7 @@
 
 use godot::classes::geometry_instance_3d::ShadowCastingSetting;
 use godot::classes::tween::{EaseType, TransitionType};
-use godot::classes::{Area3D, CylinderShape3D, CollisionShape3D, MeshInstance3D, QuadMesh, Shader, ShaderMaterial};
+use godot::classes::{Area3D, CylinderShape3D, CollisionShape3D, MeshInstance3D, QuadMesh, ShaderMaterial};
 use godot::prelude::*;
 
 use super::layers::CONTROL_LAYER;
@@ -61,8 +61,7 @@ pub fn attach_exile_portal(zone: &mut Gd<Node3D>) {
     if zone.get_node_or_null("ExilePortal").is_some() {
         return;
     }
-    let mut shader = Shader::new_gd();
-    shader.set_code(&format!("{SHADER_HEAD}{PERLIN_FBM}{SHADER_BODY}"));
+    let shader = crate::table::shared::shader(&format!("{SHADER_HEAD}{PERLIN_FBM}{SHADER_BODY}"));
     let mut mat = ShaderMaterial::new_gd();
     mat.set_shader(&shader);
     mat.set_shader_parameter("open", &0.0f32.to_variant());

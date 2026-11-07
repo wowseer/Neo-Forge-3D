@@ -102,9 +102,14 @@ The protocol is plain JSON Lines. Without the Rust crates:
 
 ```sh
 java -Xmx2048m -Dfile.encoding=UTF-8 -Djava.awt.headless=true \
+     -XX:+UseG1GC -XX:MinHeapFreeRatio=10 -XX:MaxHeapFreeRatio=40 -XX:G1PeriodicGCInterval=10000 \
      -cp forge-bridge.jar:forge-gui-desktop-…-jar-with-dependencies.jar \
      clash.forgebridge.app.BridgeMain          # working directory: the Forge folder
 ```
+
+The `-XX` options are optional: they make the JVM return unused heap instead of keeping it
+(Forge holds only about 200 MB of live data during a match; without them the bridge kept about
+1.2 GB, with them about 0.7 GB). `clash-forge-client` passes them by itself (`JVM_MEMORY_ARGS`).
 
 Then write lines to stdin (`{"cmd":"ping","nonce":1}`, `{"cmd":"start_match",…}`,
 `{"cmd":"answer","id":…,"choice":{…}}`) and read lines from stdout. All other output from Forge

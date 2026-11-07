@@ -28,7 +28,7 @@ use std::collections::HashMap;
 
 use godot::classes::geometry_instance_3d::ShadowCastingSetting;
 use godot::classes::mesh::PrimitiveType;
-use godot::classes::{ImmediateMesh, INode3D, MeshInstance3D, Shader, ShaderMaterial};
+use godot::classes::{ImmediateMesh, INode3D, MeshInstance3D, ShaderMaterial};
 use godot::prelude::*;
 
 use super::shader_noise::PERLIN_FBM;
@@ -160,8 +160,7 @@ pub struct TargetArrows {
 #[godot_api]
 impl INode3D for TargetArrows {
     fn init(base: Base<Node3D>) -> Self {
-        let mut shader = Shader::new_gd();
-        shader.set_code(&SHADER.replace("%NOISE%", PERLIN_FBM));
+        let shader = crate::table::shared::shader(&SHADER.replace("%NOISE%", PERLIN_FBM));
         let mut material = ShaderMaterial::new_gd();
         material.set_shader(&shader);
         // Über Tisch und flach liegenden Karten zeichnen

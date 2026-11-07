@@ -28,7 +28,7 @@ use godot::classes::geometry_instance_3d::ShadowCastingSetting;
 use godot::classes::tween::{EaseType, TransitionType};
 use godot::classes::{
     Area3D, BoxMesh, BoxShape3D, CollisionShape3D, IArea3D, MeshInstance3D, PlaneMesh,
-    Shader, ShaderMaterial, StandardMaterial3D, Texture2D, Tween,
+    ShaderMaterial, StandardMaterial3D, Texture2D, Tween,
 };
 use godot::prelude::*;
 
@@ -477,9 +477,14 @@ impl IArea3D for Card3D {
         }
 
         self.update_cost_row();
-        self.update_coins(delta as f32);
-        self.update_shield(delta as f32);
         let dt = delta as f32;
+        // Münzen und Schild nur, solange sie aufspringen bzw. aufblitzen (sonst stehen sie still)
+        if self.coins.iter().any(|c| c.3 < COIN_POP_TIME) {
+            self.update_coins(dt);
+        }
+        if self.shield.as_ref().is_some_and(|s| s.2 < SHIELD_FLASH_TIME) {
+            self.update_shield(dt);
+        }
         // Kachel auf dem Spielfeld, beim Zoomen und Ziehen die ganze Karte (lesbar)
         let want_tile = if self.hold_left > 0.0 { self.tile_shown } else { self.tile && !zoomed && !self.dragging };
         if want_tile != self.tile_shown {
@@ -511,6 +516,9 @@ impl IArea3D for Card3D {
         // Abstand zum Blocker bleibt wie zwischen den Reihen, die Karten überlappen nicht
         let adv_goal = if self.advanced && self.combat_x.is_none() && !self.dragging && !zoomed { 1.0 } else { 0.0 };
         self.advance_amount += (adv_goal - self.advance_amount) * (1.0 - (-10.0 * dt).exp());
+        if (adv_goal - self.advance_amount).abs() < 1e-4 {
+            self.advance_amount = adv_goal;
+        }
         let mut target = target;
         let scale = self.base().get_global_transform().basis.col_a().length().max(0.01);
         target.origin.z -= ADVANCE.min(ADVANCE_MAX_WORLD / scale) * self.advance_amount;
@@ -521,16 +529,23 @@ impl IArea3D for Card3D {
         let applied = self.lunge_applied;
         let turn_applied = self.lunge_turn_applied;
         let visual = self.visual.as_mut().unwrap();
-        let mut current = visual.get_transform();
+        let shown = visual.get_transform();
+        let mut current = shown;
         current.origin -= applied;
         current.basis = Basis::from_axis_angle(Vector3::UP, -turn_applied) * current.basis;
         let mut next = current.interpolate_with(&target, w);
+        // Am Ziel einrasten: danach bleibt das Kartenbild unverändert und wird nicht mehr gesetzt
+        // (jedes Setzen erneuert alle Teile der Karte im RenderingServer, auch ihre Schatten)
+        if transforms_close(&next, &target) {
+            next = target;
+        }
         next.origin += lunge;
         next.basis = Basis::from_axis_angle(Vector3::UP, turn) * next.basis;
         match flip {
             // Umdrehen: Drehung um die Längsachse (lokal z) und Anheben direkt setzen
             Some(xf) => visual.set_transform(target * xf),
-            None => visual.set_transform(next),
+            None if next != shown => visual.set_transform(next),
+            None => {}
         }
         self.lunge_applied = lunge;
         self.lunge_turn_applied = turn;
@@ -1030,6 +1045,7 @@ impl Card3D {
         }
         self.refresh_labels();
         self.sync_shield();
+        self.update_coins(0.0);
     }
 
     /// Vorderseite: als Kachel die eigene Kachel-Textur (ganz), sonst die Kartenvorderseite (als
@@ -1498,13 +1514,13 @@ impl Card3D {
     /// (eigene Hand), wenn die Karte offen liegt, Kosten hat und kein Land ist. Rechts oben, zur
     /// Hälfte über die Kante ragend, wie im Video „Spree und Stack“.
     fn update_cost_row(&mut self) {
+        // läuft jedes Frame: erst die billigen Bedingungen, Kosten nur beim Anlegen zerlegen
         let want = self.zone.as_ref().is_some_and(|z| z.bind().shows_costs())
             && !self.def.face_down
-            && self.card_kind != CardKind::Land
-            && !cost_symbols::cost_tokens(&self.def.cost_text).is_empty();
-        let text = self.def.cost_text.clone();
+            && self.card_kind != CardKind::Land;
         if let Some((shown, row)) = self.cost_row.as_mut() {
-            if *shown == text {
+            if *shown == self.def.cost_text {
+                // eine Reihe gibt es nur zu Kosten mit Symbolen
                 if row.is_visible() != want {
                     row.set_visible(want);
                 }
@@ -1516,8 +1532,12 @@ impl Card3D {
         if !want {
             return;
         }
-        let Some(visual) = self.visual.as_mut() else { return };
+        let text = self.def.cost_text.clone();
         let tokens = cost_symbols::cost_tokens(&text);
+        if tokens.is_empty() {
+            return;
+        }
+        let Some(visual) = self.visual.as_mut() else { return };
         let width = cost_symbols::row_width(tokens.len(), HAND_COST_SIZE);
         let mut row = cost_symbols::cost_row(&tokens, HAND_COST_SIZE);
         // eine Ebene unter den Knöpfen und Bühnen-Beschriftungen (Priorität 1/2): Kosten über
@@ -1655,8 +1675,7 @@ impl Card3D {
         self.base_mut().add_child(&visual);
         self.visual = Some(visual.clone());
         // Kampfmarkierung: flackernde Aura rund um die Karte (sonst unsichtbar)
-        let mut glow_shader = Shader::new_gd();
-        glow_shader.set_code(GLOW_SHADER);
+        let glow_shader = crate::table::shared::shader(GLOW_SHADER);
         let mut marker_mat = ShaderMaterial::new_gd();
         marker_mat.set_shader(&glow_shader);
         let quad = Vector2::new(CARD_WIDTH, CARD_HEIGHT) + Vector2::splat(2.0 * GLOW_MARGIN);
@@ -1679,8 +1698,7 @@ impl Card3D {
         self.marker_material = Some(marker_mat);
 
         // Angriffsspitze: rote Dachform über der Oberkante (zeigt zum Ziel), nur bei Angreifern
-        let mut banner_shader = Shader::new_gd();
-        banner_shader.set_code(BANNER_SHADER);
+        let banner_shader = crate::table::shared::shader(BANNER_SHADER);
         let mut banner_mat = ShaderMaterial::new_gd();
         banner_mat.set_shader(&banner_shader);
         let mut banner_mesh = PlaneMesh::new_gd();
@@ -1697,8 +1715,7 @@ impl Card3D {
         self.banner_material = Some(banner_mat);
 
         // Blockschweif: Bogen aus Licht über der Kante zum Angreifer, nur bei Blockern
-        let mut trail_shader = Shader::new_gd();
-        trail_shader.set_code(&TRAIL_SHADER.replace("%NOISE%", PERLIN_FBM));
+        let trail_shader = crate::table::shared::shader(&TRAIL_SHADER.replace("%NOISE%", PERLIN_FBM));
         let mut trail_mat = ShaderMaterial::new_gd();
         trail_mat.set_shader(&trail_shader);
         trail_mat.set_shader_parameter("seed", &(self.base().instance_id().to_i64().rem_euclid(97) as f32 * 0.37).to_variant());
@@ -1719,7 +1736,7 @@ impl Card3D {
         let mut icon_mat = StandardMaterial3D::new_gd();
         icon_mat.set_shading_mode(ShadingMode::UNSHADED);
         icon_mat.set_transparency(godot::classes::base_material_3d::Transparency::ALPHA);
-        icon_mat.set_texture(TextureParam::ALBEDO, &super::textures::tap_icon());
+        icon_mat.set_texture(TextureParam::ALBEDO, &super::shared::texture("tap_icon", super::textures::tap_icon));
         icon_mat.set_texture_filter(TextureFilter::LINEAR_WITH_MIPMAPS);
         let mut icon_mesh = PlaneMesh::new_gd();
         icon_mesh.set_size(Vector2::splat(TAP_ICON_SIZE));
@@ -1744,6 +1761,17 @@ impl Card3D {
         }
         self.apply_brightness();
     }
+}
+
+/// Liegen zwei Transformationen so nah beieinander, dass der Unterschied unsichtbar ist
+/// (Kartenbild am Ziel angekommen)?
+fn transforms_close(a: &Transform3D, b: &Transform3D) -> bool {
+    const EPS: f32 = 1e-4;
+    let near = |u: Vector3, v: Vector3| {
+        let d = u - v;
+        d.x.abs() <= EPS && d.y.abs() <= EPS && d.z.abs() <= EPS
+    };
+    near(a.origin, b.origin) && near(a.basis.col_a(), b.basis.col_a()) && near(a.basis.col_b(), b.basis.col_b()) && near(a.basis.col_c(), b.basis.col_c())
 }
 
 fn apply_texture(mat: &mut Gd<StandardMaterial3D>, tex: Option<&Gd<Texture2D>>, fallback: Color) {

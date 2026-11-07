@@ -22,7 +22,7 @@ use godot::classes::geometry_instance_3d::ShadowCastingSetting;
 use godot::classes::label_3d::DrawFlags;
 use godot::classes::{
     Area3D, BoxShape3D, CollisionShape3D, INode3D, InputEvent, InputEventMouseButton, Label3D, MeshInstance3D,
-    QuadMesh, Shader, ShaderMaterial,
+    QuadMesh, ShaderMaterial,
 };
 use godot::global::{HorizontalAlignment, MouseButton};
 use godot::prelude::*;
@@ -444,8 +444,7 @@ impl SearchList {
     /// Abgerundete Fläche; `fades` = blendet beim Erscheinen mit ein (Hover/Auswahl steuern ihre
     /// Deckkraft selbst bzw. sind ausgeblendet).
     fn panel(&mut self, size: Vector2, pos: Vector3, fill: Color, radius: f32, icon: bool, fades: bool) -> (Gd<MeshInstance3D>, Gd<ShaderMaterial>) {
-        let mut shader = Shader::new_gd();
-        shader.set_code(SHADER);
+        let shader = crate::table::shared::shader(SHADER);
         let mut mat = ShaderMaterial::new_gd();
         mat.set_shader(&shader);
         mat.set_shader_parameter("size", &size.to_variant());

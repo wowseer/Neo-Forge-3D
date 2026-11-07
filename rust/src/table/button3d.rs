@@ -15,7 +15,7 @@
 use godot::classes::geometry_instance_3d::ShadowCastingSetting;
 use godot::classes::label_3d::DrawFlags;
 use godot::classes::{
-    Area3D, BoxShape3D, CollisionShape3D, IArea3D, Label3D, MeshInstance3D, QuadMesh, Shader, ShaderMaterial,
+    Area3D, BoxShape3D, CollisionShape3D, IArea3D, Label3D, MeshInstance3D, QuadMesh, ShaderMaterial,
 };
 use godot::prelude::*;
 
@@ -162,6 +162,8 @@ pub struct Button3D {
     hovered: bool,
     /// 0 = nicht gehovert, 1 = gehovert (weich nachgeführt).
     hover_amount: f32,
+    /// Zuletzt an den Shader gegebenes Leuchten (Hover-Verstärkung, ausgegraut).
+    shown_glow: Option<(f32, f32)>,
     /// Zeit seit dem Erscheinen bzw. seit Beginn des Verschwindens.
     appear: f32,
     dismissing: Option<f32>,
@@ -187,6 +189,7 @@ impl IArea3D for Button3D {
             visual: None,
             hovered: false,
             hover_amount: 0.0,
+            shown_glow: None,
             appear: 0.0,
             dismissing: None,
             press: None,
@@ -209,11 +212,14 @@ impl IArea3D for Button3D {
                 let basis = cam.get_global_transform().basis;
                 let mut xf = self.base().get_global_transform();
                 xf.basis = basis.orthonormalized().scaled(xf.basis.get_scale());
-                self.base_mut().set_global_transform(xf);
+                self.place_global(xf);
             }
         }
         let target = if self.hovered && self.enabled { 1.0 } else { 0.0 };
         self.hover_amount += (target - self.hover_amount) * (1.0 - (-HOVER_SPEED * dt).exp());
+        if (target - self.hover_amount).abs() < 1e-3 {
+            self.hover_amount = target;
+        }
 
         // Größe: Erscheinen (Cubic-Out), Hover, Klick, Verschwinden
         let p = (self.appear / APPEAR_TIME).min(1.0);
@@ -236,15 +242,21 @@ impl IArea3D for Button3D {
                 return;
             }
         }
+        // nur Geändertes setzen (läuft jedes Frame)
         if let Some(v) = self.visual.as_mut() {
-            v.set_scale(Vector3::splat(scale.max(0.001)));
+            let s = Vector3::splat(scale.max(0.001));
+            if v.get_scale() != s {
+                v.set_scale(s);
+            }
         }
         // Leuchten beim Hover heller; ausgegraut, wenn nicht anklickbar (Puls macht der Shader)
-        let boost = 1.0 + 0.45 * self.hover_amount;
-        let disabled = if self.enabled { 0.0 } else { 1.0 };
-        if let Some(m) = self.material.as_mut() {
-            m.set_shader_parameter("glow_boost", &boost.to_variant());
-            m.set_shader_parameter("disabled", &disabled.to_variant());
+        let glow = (1.0 + 0.45 * self.hover_amount, if self.enabled { 0.0f32 } else { 1.0 });
+        if self.shown_glow != Some(glow) {
+            self.shown_glow = Some(glow);
+            if let Some(m) = self.material.as_mut() {
+                m.set_shader_parameter("glow_boost", &glow.0.to_variant());
+                m.set_shader_parameter("disabled", &glow.1.to_variant());
+            }
         }
     }
 }
@@ -370,7 +382,21 @@ impl Button3D {
         let per_px = 2.0 * SCREEN_DEPTH * (cam.get_fov().to_radians() * 0.5).tan() / size.y.max(1.0);
         let scale = pin.width_px * per_px / self.width.max(0.001);
         let basis = cam.get_global_transform().basis.orthonormalized().scaled(Vector3::splat(scale));
-        self.base_mut().set_global_transform(Transform3D::new(basis, origin));
+        self.place_global(Transform3D::new(basis, origin));
+    }
+
+    /// Setzt die globale Lage, wenn sie sich (sichtbar) ändert – sonst nichts (läuft jedes Frame;
+    /// jedes Setzen erneuert alle Teile des Knopfs und seine Trefferfläche).
+    fn place_global(&mut self, xf: Transform3D) {
+        let cur = self.base().get_global_transform();
+        let near = |a: Vector3, b: Vector3| (a - b).length() < 1e-5;
+        let same = near(cur.origin, xf.origin)
+            && near(cur.basis.col_a(), xf.basis.col_a())
+            && near(cur.basis.col_b(), xf.basis.col_b())
+            && near(cur.basis.col_c(), xf.basis.col_c());
+        if !same {
+            self.base_mut().set_global_transform(xf);
+        }
     }
 
     fn build(&mut self) {
@@ -413,6 +439,7 @@ impl Button3D {
 
         self.base_mut().add_child(&visual);
         self.material = Some(material);
+        self.shown_glow = None;
         self.label = Some(label);
         self.visual = Some(visual);
         self.fit_label();
@@ -487,8 +514,7 @@ fn apply_palette(mat: &mut Gd<ShaderMaterial>, style: ButtonStyle) {
 /// Fläche mit dem Knopf-Shader im Farbstil `style` (Vorderseite +Z). Jeder Knopf bekommt einen
 /// zufälligen Zeitversatz, damit nebeneinanderliegende Knöpfe nicht im Gleichtakt laufen.
 fn surface(style: ButtonStyle, size: Vector2, body: f32) -> (Gd<MeshInstance3D>, Gd<ShaderMaterial>) {
-    let mut shader = Shader::new_gd();
-    shader.set_code(&button_shader());
+    let shader = crate::table::shared::shader(&button_shader());
     let mut mat = ShaderMaterial::new_gd();
     mat.set_shader(&shader);
     mat.set_render_priority(1);

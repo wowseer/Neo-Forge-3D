@@ -29,6 +29,46 @@ Restart the game after every Rust build so the new library is loaded.
 `godot/rust.gdextension` points to `rust/target/debug/` in debug and to `rust/target/release/` in
 exports.
 
+### Performance
+
+The game is meant to stay light on CPU, GPU and battery:
+
+- **Optimised debug build.** Godot (also when NeoForge starts the table) loads the library from
+  `rust/target/debug/`, so `rust/Cargo.toml` builds the `dev` profile optimised (`opt-level = 1`
+  for the game, `3` for dependencies such as `godot`; debug info stays). Unoptimised, the Rust
+  code alone needed about twice the CPU time per frame.
+- **Frame rate (`FramePacer`, `table/frame_pacer.rs`, node in `table.tscn`).** While something
+  happens – any input, every message from the engine and `hold_seconds` (2 s) after it, long
+  enough for the animations it triggers – the table draws at `active_fps` (60; with V-Sync on a
+  monitor of up to 60 Hz, V-Sync alone limits). At rest it draws at `idle_fps` (30), minimised
+  at `minimized_fps` (10). Any input switches back to the full rate at once. Other code reports
+  activity with `frame_pacer::wake()`. Change the values in the inspector of the `FramePacer`
+  node (0 = unlimited).
+- **Per-frame code writes only what changed.** Card images settle at their target and are then
+  no longer moved (`Card3D`: every transform change updates all parts of a card in the rendering
+  server and its shadows), counters/shields/cost rows/3D buttons/camera likewise. 2D displays
+  that animate every frame keep their resting parts and redraw only the moving ones: medallions
+  (`SeatBadge`: ring, figure, plate only on change; target ring, ray crown and eyes in own
+  canvas items) and the phase timeline (only the current, pulsing station). Many filled shapes
+  are drawn as one triangle array (`game/tri_batch.rs`) – Godot creates GPU buffers for every
+  single `draw_polygon`/`draw_circle`.
+- **Shared resources.** Shaders with the same code and generated images (tap symbol) exist only
+  once (`table/shared.rs`), not once per card, button or effect – no shader compiling when new
+  cards or effects appear.
+- **Java bridge memory.** `clash-forge-client` starts the JVM with G1 settings that return unused
+  heap (`JVM_MEMORY_ARGS`): Forge holds only about 200 MB of live data during a match, but the
+  JVM used to keep about 1.2 GB; now about 0.7 GB (same `-Xmx`). Each new state is converted to
+  Godot data only once (it used to be converted twice).
+
+Measured with an AI game at 1152×648 (RTX 3070 Ti, 1 core = 100 %, before → after):
+
+| | before | after |
+|---|---|---|
+| CPU Godot, match running (60 fps) | 41 % | 21 % |
+| CPU Godot, resting table | 68 % (60 fps) | 17 % at 60 fps, 10 % with `FramePacer` (30 fps) |
+| Memory Godot (resident) | about 1.95 GB | about 1.0 GB |
+| Memory Java bridge (resident) | about 1.2 GB | about 0.7 GB |
+
 **Own graphics only** (e.g. for images that must not show protected material): set the
 environment variable `CLASH_FREE_ASSETS=1` or start Godot with `-- --free-assets`
 (`rust/src/assets.rs`). The table then shows no card images (Scryfall) and uses no symbols from
@@ -58,6 +98,7 @@ Table (TableController)          root: mouse input, drag and drop, camera focus
 ├── Opponent (PlayerSeat)        opponent at the top (Forge AI, seat 1), same structure, rotated
 │                                by 180°; hand at the top edge, medallion directly below it
 ├── Stack (Zone)                 stack upright at the right edge (kind 4, floats slightly above the board)
+├── FramePacer (FramePacer)      frame rate: full while something happens, lower at rest
 ├── TurnHud (TurnHud)            screen display, reads from the ForgeTable
 ├── ForgeBridge (ForgeBridge)    Java process with Forge
 └── ForgeTable (ForgeTable)      syncs the table with Forge, carries out moves

@@ -194,6 +194,8 @@ accepts_drops = false
 cards_draggable = false
 transform = Transform3D(3, 0, 0, 0, 2.898, -0.776, 0, 0.776, 2.898, 8, 1.6, -0.2)
 
+[node name="FramePacer" type="FramePacer" parent="." unique_id=1843306217]
+
 [node name="TurnHud" type="TurnHud" parent="." unique_id=532571454 node_paths=PackedStringArray("forge_table", "player_hero_anchor", "opponent_hero_anchor", "player_mana_anchor")]
 forge_table = NodePath("../ForgeTable")
 player_hero_anchor = NodePath("../Player/HeroAnchor")

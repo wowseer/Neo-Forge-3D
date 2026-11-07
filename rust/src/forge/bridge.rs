@@ -119,6 +119,10 @@ impl INode for ForgeBridge {
                 }
             }
         }
+        if !messages.is_empty() {
+            // Nachrichten der Engine lösen Animationen aus: volle Bildrate
+            crate::table::frame_pacer::wake();
+        }
         for m in messages {
             match m {
                 Incoming::Message(v) => self.dispatch(&v),
@@ -386,7 +390,9 @@ impl ForgeBridge {
             godot_print!("ForgeBridge <- {msg}");
         }
         self.signals().message_received().emit(&dict);
-        let sub = |key: &str| obj.get(key).and_then(Value::as_object).map(json::to_dictionary).unwrap_or_default();
+        // Teilobjekte aus dem schon umgewandelten Wörterbuch nehmen (der Zustand ist die größte
+        // Nachricht und wurde früher ein zweites Mal umgewandelt)
+        let sub = |key: &str| dict.get(key).and_then(|v| v.try_to::<VarDictionary>().ok()).unwrap_or_default();
         match clash_protocol::message_type(msg) {
             "ready" => {
                 self.ready = true;
