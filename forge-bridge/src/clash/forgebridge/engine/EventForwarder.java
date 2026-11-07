@@ -31,9 +31,11 @@ final class EventForwarder {
         JsonObject m = BridgeCore.message("event");
         m.addProperty("event", ev.getClass().getSimpleName());
         m.addProperty("text", String.valueOf(ev));
+        // vor dem ersten Zug gibt es noch keinen Phasen-Ablauf (z. B. Mana-Splitter, die das
+        // Adventure zu Beginn vergibt): dann Runde 0 ohne Phase
         var ph = game.getPhaseHandler();
-        m.addProperty("turn", ph.getTurn());
-        m.addProperty("phase", ph.getPhase() == null ? null : ph.getPhase().name());
+        m.addProperty("turn", ph == null ? 0 : ph.getTurn());
+        m.addProperty("phase", ph == null || ph.getPhase() == null ? null : ph.getPhase().name());
         addDetails(m, ev);
         BridgeCore.send(m);
         // KI-Züge sichtbar machen: nach Aktionen der KI kurz warten (siehe AiPace)

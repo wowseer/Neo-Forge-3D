@@ -4,19 +4,22 @@ import java.io.File;
 import java.io.IOException;
 import java.util.Collection;
 import java.util.EnumSet;
+import java.util.List;
 import java.util.Set;
 
 import clash.forgebridge.ClashBridge;
 import clash.forgebridge.TableLauncher;
 import forge.LobbyPlayer;
 import forge.game.GameType;
+import forge.game.player.RegisteredPlayer;
 
 /**
  * 3D-Spieltisch aus Neo Forge 3D (Godot) für NeoForge-Partien – die NeoForge-spezifische Hülle um
  * die Brücke ({@link ClashBridge}, {@link TableLauncher}).
  *
  * <p>Ist er eingeschaltet und die Partie ein 1 gegen 1 ({@link #useFor}), setzt
- * {@link forge.neo.match.NeoGame} für den menschlichen Sitz {@link #player} ein: Jede Entscheidung
+ * {@link forge.neo.match.NeoGame} (bzw. für Adventure-Duelle {@code forge.neo.adventure.NeoDuelBridge}
+ * über {@link #openForDuel}) für den menschlichen Sitz {@link #player} ein: Jede Entscheidung
  * des Spielers geht dann über das Protokoll (JSON-Zeilen, siehe Neo Forge 3D
  * {@code docs/Forge-Protocol.md}) an den Godot-Tisch statt an {@code NeoMatchUI}. Menüs, Decks und
  * Modi bleiben bei NeoForge; Partien mit mehr Spielern laufen weiter an NeoForges eigenem Tisch.
@@ -124,6 +127,40 @@ public final class ClashTable {
             System.err.println("[clash] 3D-Tisch nicht verfügbar: " + e.getMessage());
             return null;
         }
+    }
+
+    /**
+     * Für Partien, deren Spieler schon fertig aufgestellt sind (Adventure-Duelle von NeoForge,
+     * {@code forge.neo.adventure.NeoDuelBridge}): Läuft die Partie am 3D-Tisch ({@link #useFor}), wird
+     * er gestartet und der menschliche Sitz an ihn gehängt. Der Mensch rückt dafür auf Sitzplatz 0
+     * (der Tisch zeigt Sitz 0 unten; das Adventure setzt ihn als Letzten) – bei zwei Spielern ändert
+     * die Reihenfolge nichts an der Partie. Blockiert, bis Godot verbunden ist (nicht im Faden einer
+     * Oberfläche aufrufen).
+     *
+     * @param players  Spieler der Partie (wird bei Erfolg umsortiert)
+     * @param human    menschlicher Sitz (bekommt bei Erfolg den ferngesteuerten Spieler)
+     * @param gameType Spielart ({@code GameRules.getGameType()})
+     * @param variants Varianten der Partie (darf {@code null} sein)
+     * @return die Verbindung zum Tisch (nach der Partie schließen) oder {@code null}: NeoForges
+     *         eigener Tisch
+     */
+    public static TableLauncher.Session openForDuel(List<RegisteredPlayer> players, RegisteredPlayer human,
+            GameType gameType, Collection<GameType> variants) {
+        Set<GameType> all = EnumSet.of(gameType);
+        if (variants != null) {
+            all.addAll(variants);
+        }
+        if (!players.contains(human) || !useFor(players.size() - 1, false, all)) {
+            return null;
+        }
+        TableLauncher.Session session = open();
+        if (session == null) {
+            return null;
+        }
+        players.remove(human);
+        players.add(0, human);
+        human.setPlayer(player(human.getPlayer().getName(), 0));
+        return session;
     }
 
     /**

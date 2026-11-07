@@ -404,7 +404,8 @@ starts Godot with `-- --clash-port=N`, and the human seat is driven through the 
 v3) (details: `docs/Forge-Protocol.md`, section "Embedded in NeoForge").
 
 **Only 1 vs 1:** the 3D table takes matches with exactly two players (you and one opponent,
-Commander 1 vs 1 too). Matches with more players, two people on one computer (hot seat),
+Commander 1 vs 1 too, and Adventure duels against a single enemy – they start in
+`adventure/NeoDuelBridge` instead of `NeoGame`, `ClashTable.openForDuel`). Matches with more players, two people on one computer (hot seat),
 Planechase, Archenemy and Vanguard stay on NeoForge's own table (`ClashTable.useFor`).
 
 **Building and starting:** `tools/neoforge_build.sh` builds NeoForge from source with the 3D table
@@ -433,7 +434,7 @@ the itch.io build) is enough:
   `git -C <neoforge> apply integrations/neoforge/neoforge-host.patch`,
 - `tools/sync_neoforge.sh` copies the bridge (without `app/`) and `ClashTable` into NeoForge,
 - `tools/neoforge_patch.sh` compiles them together with the modified NeoForge classes
-  (`ClashTable`, `NeoGame`, `SafeAi`, `NeoMain`, `SettingsPanel`, language files) into a patch jar,
+  (`ClashTable`, `NeoGame`, `NeoDuelBridge`, `SafeAi`, `NeoMain`, `SettingsPanel`, language files) into a patch jar,
 - `tools/neoforge_export_patch.sh` regenerates `neoforge-host.patch` from the NeoForge repository,
 - `tools/neoforge_clash.sh [--deck=NAME] [--timeout=SEC]` plays a Commander match with the 3D
   table in a test copy (your own NeoForge data stays untouched; command `NeoMain clash`).

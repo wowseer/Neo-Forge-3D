@@ -15,6 +15,147 @@ index 53d5f0c..8428db5 100644
              case "ui":
                  banner("PHASE 2 - JavaFX interface");
                  // Los textos del motor, antes de construir NeoApp: hay campos
+diff --git a/forge-gui-neo/src/main/java/forge/neo/adventure/NeoDuelBridge.java b/forge-gui-neo/src/main/java/forge/neo/adventure/NeoDuelBridge.java
+index 9f82385..d88d8c3 100644
+--- a/forge-gui-neo/src/main/java/forge/neo/adventure/NeoDuelBridge.java
++++ b/forge-gui-neo/src/main/java/forge/neo/adventure/NeoDuelBridge.java
+@@ -76,56 +76,94 @@ public final class NeoDuelBridge {
+         };
+         NeoWindow.takeOver();
+ 
+-        Platform.runLater(() -> {
+-            final TableScreen table = new TableScreen(NeoWindow.cardWidth(), NeoWindow.sideWidth());
+-            table.getDetailPanel().setTextZoom(NeoSettings.getDouble(NeoSettings.TEXT_ZOOM, 1.15));
+-            // OJO: sin CardZoom.install. La mesa ya trae su propio zoom de click
+-            // derecho; con los dos, cada click abria una segunda vista y habia que
+-            // cerrar dos veces (reportado jugando).
+-            NeoWindow.show(table, "NeoForge · Adventure · duelo contra " + enemyName);
++        // Neo Forge 3D: im 1 gegen 1 spielt der Mensch am 3D-Tisch (Godot), wie in NeoGame. Godot zu
++        // starten dauert ein paar Sekunden: in einem eigenen Faden, nicht in dem von libGDX (play()
++        // muss sofort zurueckkehren). Ohne 3D-Tisch (aus, mehr Spieler, Godot startet nicht) bleibt
++        // alles wie bisher.
++        final boolean auto = Boolean.getBoolean("neo.adventure.auto");
++        final Thread opener = new Thread(() -> {
++            final clash.forgebridge.TableLauncher.Session table3d = auto ? null
++                    : forge.neo.clash.ClashTable.openForDuel(players, human, rules.getGameType(), variants);
++            Platform.runLater(() -> startOnFx(match, rules, variants, players, human, enemyName, back, auto, table3d));
++        }, "neo-adventure-start");
++        opener.setDaemon(true);
++        opener.start();
++    }
++
++    /**
++     * Mesa y partida, en el hilo de JavaFX.
++     *
++     * <p>Neo Forge 3D: mit {@code table3d} schaut die NeoMatchUI nur unsichtbar zu (ohne Tisch); der
++     * Mensch spielt im Fenster des 3D-Tischs, hier steht nur ein Hinweis darauf.
++     */
++    private static void startOnFx(final HostedMatch match, final GameRules rules,
++                                  final Set<GameType> variants, final List<RegisteredPlayer> players,
++                                  final RegisteredPlayer human, final String enemyName,
++                                  final Runnable back, final boolean auto,
++                                  final clash.forgebridge.TableLauncher.Session table3d) {
++        final TableScreen table = new TableScreen(NeoWindow.cardWidth(), NeoWindow.sideWidth());
++        table.getDetailPanel().setTextZoom(NeoSettings.getDouble(NeoSettings.TEXT_ZOOM, 1.15));
++        // OJO: sin CardZoom.install. La mesa ya trae su propio zoom de click
++        // derecho; con los dos, cada click abria una segunda vista y habia que
++        // cerrar dos veces (reportado jugando).
++        NeoWindow.show(table, "NeoForge · Adventure · duelo contra " + enemyName);
+ 
+-            final TableBinder binder = new TableBinder(table);
+-            final NeoMatchUI gui = new NeoMatchUI(Boolean.getBoolean("neo.adventure.auto")
+-                    ? NeoMatchUI.Mode.AUTO_PLAY : NeoMatchUI.Mode.HUMAN, false);
+-            gui.setAutoPayMana(NeoSettings.autoPayMana());
+-            gui.setEnding(NeoMatchUI.Ending.QUEST);
++        final TableBinder binder = new TableBinder(table);
++        final NeoMatchUI gui = new NeoMatchUI(table3d != null ? NeoMatchUI.Mode.OBSERVE
++                : auto ? NeoMatchUI.Mode.AUTO_PLAY : NeoMatchUI.Mode.HUMAN, false);
++        gui.setAutoPayMana(NeoSettings.autoPayMana());
++        gui.setEnding(NeoMatchUI.Ending.QUEST);
++        if (table3d != null) {
++            binder.setPrompt(forge.neo.NeoText.get("clash.playing"));
++        } else {
+             gui.setBinder(binder);
+             gui.setTable(table);
+             binder.setMatchUi(gui);
+             DuelControls.install(NeoWindow.scene(), table, gui);
+-            // Que teclas manda aqui, dicho en el registro. Una linea por duelo,
+-            // y esta a proposito: al reportar "los atajos no me funcionan en la
+-            // Aventura" (20-09-2026) la primera pregunta era si este proceso
+-            // lee TUS teclas o las de fabrica, y no habia forma de saberlo sin
+-            // recompilar. Son los mismos ajustes: este proceso hereda el
+-            // entorno del que lo lanza, asi que lee el mismo neo.properties.
+-            log("atajos: prioridad=" + NeoShortcuts.describe(NeoShortcuts.Action.PASS_PRIORITY)
+-                    + " registro=" + NeoShortcuts.describe(NeoShortcuts.Action.GAME_LOG)
+-                    + " | ajustes en " + NeoSettings.path());
+-            spaceProbeLater(table);
++        }
++        // Que teclas manda aqui, dicho en el registro. Una linea por duelo,
++        // y esta a proposito: al reportar "los atajos no me funcionan en la
++        // Aventura" (20-09-2026) la primera pregunta era si este proceso
++        // lee TUS teclas o las de fabrica, y no habia forma de saberlo sin
++        // recompilar. Son los mismos ajustes: este proceso hereda el
++        // entorno del que lo lanza, asi que lee el mismo neo.properties.
++        log("atajos: prioridad=" + NeoShortcuts.describe(NeoShortcuts.Action.PASS_PRIORITY)
++                + " registro=" + NeoShortcuts.describe(NeoShortcuts.Action.GAME_LOG)
++                + " | ajustes en " + NeoSettings.path());
++        spaceProbeLater(table);
+ 
+-            final Thread engine = new Thread(() -> {
+-                try {
+-                    NeoGame.applyEnginePrefs();
+-                    final CountDownLatch over = new CountDownLatch(1);
+-                    match.setOnMatchOver(over::countDown);
+-                    match.setStartGameHook(SafeAi.hook(match, null));
+-                    snapshotLater(gui); // antes: startMatch no vuelve hasta que acaba el duelo
++        final Thread engine = new Thread(() -> {
++            try {
++                NeoGame.applyEnginePrefs();
++                final CountDownLatch over = new CountDownLatch(1);
++                match.setOnMatchOver(over::countDown);
++                match.setStartGameHook(SafeAi.hook(match, null));
++                snapshotLater(gui); // antes: startMatch no vuelve hasta que acaba el duelo
++                if (table3d != null) {
++                    // Neo Forge 3D: kein Mensch in der Partie, HostedMatch holt sich die
++                    // Zuschauer-Oberflaeche von der Plattform (wie NeoGame mit dem 3D-Tisch).
++                    forge.neo.platform.NeoGuiBase.setGuiGameFactory(() -> gui);
++                    match.startMatch(rules, variants, players, (RegisteredPlayer) null,
++                            (forge.gui.interfaces.IGuiGame) null);
++                } else {
+                     match.startMatch(rules, variants, players, human, gui);
+-                    over.await();
+-                    log("duelo terminado, gana: "
+-                            + (gui.getGameView() == null ? "?" : gui.getGameView().getWinningPlayerName()));
+-                } catch (final Throwable e) {
+-                    log("el duelo ha fallado: " + e);
+-                    e.printStackTrace();
+-                } finally {
+-                    gui.shutdown();
+-                    NeoWindow.giveBack(back);
+                 }
+-            }, "Game-neo-adventure");
+-            engine.setDaemon(true);
+-            engine.start();
+-        });
++                over.await();
++                log("duelo terminado, gana: "
++                        + (gui.getGameView() == null ? "?" : gui.getGameView().getWinningPlayerName()));
++            } catch (final Throwable e) {
++                log("el duelo ha fallado: " + e);
++                e.printStackTrace();
++            } finally {
++                if (table3d != null) {
++                    table3d.close();
++                }
++                gui.shutdown();
++                NeoWindow.giveBack(back);
++            }
++        }, "Game-neo-adventure");
++        engine.setDaemon(true);
++        engine.start();
+     }
+ 
+     /**
 diff --git a/forge-gui-neo/src/main/java/forge/neo/match/NeoGame.java b/forge-gui-neo/src/main/java/forge/neo/match/NeoGame.java
 index 4d3fc9a..b08c6f5 100644
 --- a/forge-gui-neo/src/main/java/forge/neo/match/NeoGame.java

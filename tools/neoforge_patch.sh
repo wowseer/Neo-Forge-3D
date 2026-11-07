@@ -13,7 +13,7 @@ javac --release 17 -encoding UTF-8 -nowarn -proc:none -cp "$NEOFORGE_APP/lib/app
   -d "$OUT/classes" \
   $(find "$SRC"/clash/forgebridge -name "*.java") "$SRC"/forge/neo/clash/*.java \
   "$SRC"/forge/neo/match/NeoGame.java "$SRC"/forge/neo/match/SafeAi.java "$SRC"/forge/neo/NeoMain.java \
-  "$SRC"/forge/neo/ui/SettingsPanel.java
+  "$SRC"/forge/neo/ui/SettingsPanel.java "$SRC"/forge/neo/adventure/NeoDuelBridge.java
 # Sprachdateien (Texte der Einstellung „3D-Tisch“)
 mkdir -p "$OUT/classes/forge/neo/lang"
 cp "$NEOFORGE"/forge-gui-neo/src/main/resources/forge/neo/lang/*.properties "$OUT/classes/forge/neo/lang/"
