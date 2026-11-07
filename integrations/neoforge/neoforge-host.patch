@@ -570,10 +570,10 @@ index 60a71cc..98b7aa1 100644
      }
  }
 diff --git a/forge-gui-neo/src/main/java/forge/neo/ui/SettingsPanel.java b/forge-gui-neo/src/main/java/forge/neo/ui/SettingsPanel.java
-index af7b7e5..e76bcbf 100644
+index af7b7e5..2bdaca0 100644
 --- a/forge-gui-neo/src/main/java/forge/neo/ui/SettingsPanel.java
 +++ b/forge-gui-neo/src/main/java/forge/neo/ui/SettingsPanel.java
-@@ -971,6 +971,32 @@ public class SettingsPanel extends VBox {
+@@ -971,6 +971,35 @@ public class SettingsPanel extends VBox {
  
          tab(Tab.TABLE);
  
@@ -590,23 +590,26 @@ index af7b7e5..e76bcbf 100644
 +        clashNote.getStyleClass().add("settings-note");
 +        clashNote.setWrapText(true);
 +        getChildren().add(clashNote);
-+        getChildren().add(textRow(NeoText.get("settings.clash.godot"),
-+                forge.neo.clash.ClashTable.godotProgram(),
-+                v -> {
-+                    NeoSettings.set(forge.neo.clash.ClashTable.SETTING_GODOT, v);
-+                    NeoSettings.save();
-+                }));
-+        getChildren().add(textRow(NeoText.get("settings.clash.project"),
-+                forge.neo.clash.ClashTable.projectDir(),
-+                v -> {
-+                    NeoSettings.set(forge.neo.clash.ClashTable.SETTING_PROJECT, v);
-+                    NeoSettings.save();
-+                }));
++        // Godot-Programm und Projektordner nur ohne mitgelieferten (exportierten) Tisch
++        if (forge.neo.clash.ClashTable.tableProgram() == null) {
++            getChildren().add(textRow(NeoText.get("settings.clash.godot"),
++                    forge.neo.clash.ClashTable.godotProgram(),
++                    v -> {
++                        NeoSettings.set(forge.neo.clash.ClashTable.SETTING_GODOT, v);
++                        NeoSettings.save();
++                    }));
++            getChildren().add(textRow(NeoText.get("settings.clash.project"),
++                    forge.neo.clash.ClashTable.projectDir(),
++                    v -> {
++                        NeoSettings.set(forge.neo.clash.ClashTable.SETTING_PROJECT, v);
++                        NeoSettings.save();
++                    }));
++        }
 +
          // --- la ronda al lado del turno ---
          //
          // Discord, 13-10-2026: "Turn 23 (Round 12)", para quien lleva la
-@@ -2548,6 +2574,19 @@ public class SettingsPanel extends VBox {
+@@ -2548,6 +2577,19 @@ public class SettingsPanel extends VBox {
                  v -> onChange.accept(yes.equals(v)));
      }
  

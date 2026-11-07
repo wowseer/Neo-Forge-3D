@@ -1,8 +1,9 @@
 #!/bin/sh
 # Startet das mit tools/neoforge_build.sh gebaute NeoForge (normales Menü). Ob 1-gegen-1-Partien am
 # 3D-Tisch laufen, schaltet man in NeoForge unter Einstellungen → Tisch → „3D-Tisch (Neo Forge 3D)“.
-# Godot-Programm und Projektordner gibt dieses Skript als Vorgabe mit (Umgebungsvariablen
-# CLASH_GODOT / CLASH_PROJECT); was dort in den Einstellungen eingetragen ist, geht vor.
+# Gespielt wird mit dem exportierten Tisch aus target/clash3d (legt tools/neoforge_build.sh an); nur
+# ohne ihn mit Godot + Projektordner, die dieses Skript als Vorgabe mitgibt (CLASH_GODOT /
+# CLASH_PROJECT; was in den Einstellungen eingetragen ist, geht vor).
 #   FORGE_SRC      Forge-Checkout mit gebautem forge-gui-neo (Standard ~/OProgrammieren/Java/forge)
 #   NEOFORGE_DATA  Decks, Einstellungen, Spielstände, Kartenbilder (Standard ~/.local/share/NeoForge)
 #   CLASH_JAVA     Java ab 17 (Standard: java im PATH)
@@ -15,8 +16,8 @@ FORGE_SRC="${FORGE_SRC:-$HOME/OProgrammieren/Java/forge}"
 DATA="${NEOFORGE_DATA:-${XDG_DATA_HOME:-$HOME/.local/share}/NeoForge}"
 NEO="$FORGE_SRC/forge-gui-neo"
 [ -d "$NEO/target/classes" ] || { echo "Nicht gebaut: $NEO/target – erst tools/neoforge_build.sh"; exit 1; }
-[ -f "$REPO/rust/target/debug/libneo_forge_3d.so" ] \
-  || echo "Hinweis: Godot-Erweiterung fehlt (cd rust && cargo build) – ohne sie startet der 3D-Tisch nicht"
+[ -x "$NEO/target/clash3d/neo-forge-3d.x86_64" ] \
+  || echo "Hinweis: kein exportierter Spieltisch in $NEO/target/clash3d (tools/neoforge_build.sh) – NeoForge nimmt dann Godot + Projektordner"
 export CLASH_GODOT="${CLASH_GODOT:-godot}"
 export CLASH_PROJECT="${CLASH_PROJECT:-$REPO/godot}"
 mkdir -p "$DATA"

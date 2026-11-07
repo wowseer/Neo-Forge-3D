@@ -409,7 +409,9 @@ Commander 1 vs 1 too, and Adventure duels against a single enemy – they start 
 Planechase, Archenemy and Vanguard stay on NeoForge's own table (`ClashTable.useFor`).
 
 **Building and starting:** `tools/neoforge_build.sh` builds NeoForge from source with the 3D table
-(NeoForge repository + Forge checkout as in NeoForge's `BUILDING.md`, Maven, Java 17+),
+(NeoForge repository + Forge checkout as in NeoForge's `BUILDING.md`, Maven, Java 17+) and bundles
+the exported game table (`tools/export_table.sh` → `export/linux/`, copied to
+`forge-gui-neo/target/clash3d/`; NeoForge starts it instead of Godot plus the project folder),
 `tools/neoforge_play.sh` starts it with the paths to Godot and this project already set,
 `tools/neoforge_menu.sh` puts it into the application menu. Details:
 `integrations/neoforge/README.md`.

@@ -28,8 +28,11 @@ import forge.game.player.RegisteredPlayer;
  * „3D-Tisch (Neo Forge 3D)“, sonst Umgebungsvariable):
  * <ul>
  * <li>{@code neo.clash} / {@code NEOFORGE_CLASH} = {@code true}: 3D-Tisch verwenden</li>
- * <li>{@code neo.clash.godot} / {@code CLASH_GODOT}: Godot-Programm (Standard {@code godot})</li>
- * <li>{@code neo.clash.project} / {@code CLASH_PROJECT}: Godot-Projektordner von Neo Forge 3D</li>
+ * <li>{@code neo.clash.table} / {@code CLASH_TABLE}: exportierter Tisch (ausführbare Datei);
+ * sonst der mitgelieferte Export ({@link #bundledTable()})</li>
+ * <li>{@code neo.clash.godot} / {@code CLASH_GODOT}: Godot-Programm (Standard {@code godot}) und
+ * {@code neo.clash.project} / {@code CLASH_PROJECT}: Godot-Projektordner von Neo Forge 3D – nur
+ * ohne exportierten Tisch (Entwicklung)</li>
  * </ul>
  *
  * <p>Maßgebliche Fassung: Neo Forge 3D {@code integrations/neoforge/src/forge/neo/clash/ClashTable.java}
@@ -40,6 +43,10 @@ public final class ClashTable {
     public static final String SETTING_ON = "clash3d";
     public static final String SETTING_GODOT = "clash3d.godot";
     public static final String SETTING_PROJECT = "clash3d.project";
+    public static final String SETTING_TABLE = "clash3d.table";
+
+    /** Ordner des mitgelieferten Tisches neben NeoForges Klassen bzw. Jar (siehe {@link #bundledTable()}). */
+    public static final String BUNDLE_DIR = "clash3d";
 
     private ClashTable() {
     }
@@ -90,6 +97,41 @@ public final class ClashTable {
     }
 
     /**
+     * Exportierter Tisch, der gestartet wird: eingestellt ({@code neo.clash.table} / {@code CLASH_TABLE}),
+     * sonst der mitgelieferte ({@link #bundledTable()}); {@code null} = keiner, dann Godot-Programm
+     * und Projektordner.
+     */
+    public static File tableProgram() {
+        String set = setting("neo.clash.table", "CLASH_TABLE", SETTING_TABLE, "");
+        if (!set.isEmpty()) {
+            File f = new File(set);
+            return f.canExecute() ? f : null;
+        }
+        return bundledTable();
+    }
+
+    /**
+     * Mitgelieferter Tisch: der Godot-Export von Neo Forge 3D ({@code tools/export_table.sh}) im
+     * Ordner {@value #BUNDLE_DIR} neben NeoForges Klassen – im Quellcode-Build
+     * {@code forge-gui-neo/target/clash3d/} (neben {@code target/classes}), im Paket neben dem Jar.
+     * Wird über den Ort der Klassen gesucht, nicht über das Arbeitsverzeichnis (das Adventure läuft
+     * in einem anderen). {@code null}, wenn es keinen gibt.
+     */
+    public static File bundledTable() {
+        try {
+            File code = new File(ClashTable.class.getProtectionDomain().getCodeSource().getLocation().toURI());
+            String os = System.getProperty("os.name", "").toLowerCase(java.util.Locale.ROOT);
+            String arch = System.getProperty("os.arch", "").toLowerCase(java.util.Locale.ROOT);
+            String name = os.contains("win") ? "neo-forge-3d.exe"
+                    : "neo-forge-3d." + (arch.contains("aarch64") || arch.contains("arm") ? "arm64" : "x86_64");
+            File exe = new File(new File(code.getParentFile(), BUNDLE_DIR), name);
+            return exe.canExecute() ? exe : null;
+        } catch (java.net.URISyntaxException | RuntimeException e) {
+            return null;
+        }
+    }
+
+    /**
      * Wert: Systemeigenschaft (gilt nur für diesen Start), sonst NeoForge-Einstellung (vom Spieler im
      * Menü gesetzt), sonst Umgebungsvariable (Vorgabe, z. B. aus einem Startskript), sonst
      * {@code fallback}.
@@ -110,18 +152,26 @@ public final class ClashTable {
      * spielt NeoForge wie gewohnt mit seinem eigenen Tisch).
      */
     public static TableLauncher.Session open() {
-        String godot = godotProgram();
-        String project = projectDir();
-        if (!TableLauncher.isGodotProject(project)) {
-            System.err.println("[clash] Godot-Projekt nicht gefunden (neo.clash.project / CLASH_PROJECT): " + project);
-            return null;
+        File log = new File(System.getProperty("java.io.tmpdir"), "neoforge-clash-godot.log");
+        TableLauncher.Config config;
+        File table = tableProgram();
+        if (table != null) {
+            // exportierter Tisch: Programm und Spieldaten in einer Datei, kein Projektordner
+            config = new TableLauncher.Config(table.getPath(), List.of(), 120_000, log);
+        } else {
+            String project = projectDir();
+            if (!TableLauncher.isGodotProject(project)) {
+                System.err.println("[clash] Kein exportierter Tisch und kein Godot-Projekt (neo.clash.table / "
+                        + "neo.clash.project / CLASH_PROJECT): " + project);
+                return null;
+            }
+            TableLauncher.Config godot = new TableLauncher.Config(godotProgram(), project);
+            config = new TableLauncher.Config(godot.program(), godot.arguments(), godot.timeoutMs(), log);
         }
-        TableLauncher.Config config = new TableLauncher.Config(godot, project);
-        config = new TableLauncher.Config(config.program(), config.arguments(), config.timeoutMs(),
-                new File(System.getProperty("java.io.tmpdir"), "neoforge-clash-godot.log"));
         try {
             TableLauncher.Session session = TableLauncher.launch(config);
-            System.out.println("[clash] Godot verbunden (Port " + session.port() + ", Log " + config.log() + ")");
+            System.out.println("[clash] Tisch verbunden (" + config.program() + ", Port " + session.port()
+                    + ", Log " + config.log() + ")");
             return session;
         } catch (IOException | RuntimeException e) {
             System.err.println("[clash] 3D-Tisch nicht verfügbar: " + e.getMessage());

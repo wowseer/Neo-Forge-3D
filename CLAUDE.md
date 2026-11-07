@@ -188,6 +188,7 @@ Deckauswahl und Formate übernimmt NeoForge.
 | NeoForge mit 3D-Tisch bauen (Maven) | `tools/neoforge_build.sh` (Patch, Sync, Modul in den Forge-Checkout, `mvn package`) |
 | NeoForge mit 3D-Tisch spielen | `tools/neoforge_play.sh` (Daten in `~/.local/share/NeoForge`, Log `neo/neo.log` dort; Testbefehl: `NEOFORGE_CMD=clash`, Godot ohne Fenster über `CLASH_GODOT=<Hülle mit --headless>`) |
 | NeoForge ins Anwendungsmenü | `tools/neoforge_menu.sh` (nie NeoForges `linux/add-to-menu.sh` aus dem Quellcode: zeigt auf ein nicht vorhandenes `bin/NeoForge`) |
+| Spieltisch exportieren | `tools/export_table.sh` → `export/linux/` (`neo-forge-3d.x86_64` + `.so`, Release ohne Klassen-Doku; braucht Godots Exportvorlagen). `tools/neoforge_build.sh` legt ihn nach `forge-gui-neo/target/clash3d/`, NeoForge startet dann ihn statt Godot + Projektordner |
 | NeoForge-Patch bauen (ohne Maven) | `tools/neoforge_patch.sh` → `forge-bridge/build/neoforge/neoforge-clash-patch.jar` |
 | NeoForge-Partie mit 3D-Tisch | `tools/neoforge_clash.sh [--deck=NAME] [--timeout=SEK]` (Testkopie der Installation, eigene Spielstände bleiben unberührt) |
 | Godot | `godot` (`/usr/bin/godot`, 4.7.2 aus dem System, im PATH) |

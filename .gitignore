@@ -1,4 +1,6 @@
 rust/target/
+# exportierter Spieltisch (tools/export_table.sh)
+/export/
 godot/.godot/
 
 # Forge-Quellcode (GPL) nur als Nachschlagewerk, nicht im Repo

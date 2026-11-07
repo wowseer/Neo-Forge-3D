@@ -4,6 +4,8 @@
 #      Patch an NeoForges Klassen, wird integrations/neoforge/neoforge-host.patch angewendet
 #   2. NeoForges Modul forge-gui-neo in den Forge-Checkout kopieren (ohne dessen target/)
 #   3. mit Maven bauen (-pl forge-gui-neo -am)
+#   4. den Spieltisch exportieren (tools/export_table.sh) und nach forge-gui-neo/target/clash3d/
+#      legen: NeoForge startet dann ihn statt „Godot + Projektordner“ (ClashTable.bundledTable)
 # Danach starten: tools/neoforge_play.sh
 #   NEOFORGE   NeoForge-Repo (Standard ~/OProgrammieren/Java/NeoForge)
 #   FORGE_SRC  Forge-Checkout auf NeoForges FORGE_REF mit <module>forge-gui-neo</module> im pom.xml
@@ -41,4 +43,10 @@ rm -rf "$FORGE_SRC/forge-gui-neo/target/classes/clash" "$FORGE_SRC/forge-gui-neo
 cd "$FORGE_SRC"
 MAVEN_OPTS="${MAVEN_OPTS:--Dfile.encoding=UTF-8 -Xmx2g}" "$MVN" -B -ntp package -DskipTests \
   -DskipLaunch4j=true -Dcheckstyle.skip=true -Dassembly.skipAssembly=true -pl forge-gui-neo -am
-echo "OK: $FORGE_SRC/forge-gui-neo/target (starten mit tools/neoforge_play.sh)"
+
+# 4. Spieltisch exportieren und mitliefern
+cd "$REPO"
+tools/export_table.sh
+rm -rf "$FORGE_SRC/forge-gui-neo/target/clash3d"
+cp -R export/linux "$FORGE_SRC/forge-gui-neo/target/clash3d"
+echo "OK: $FORGE_SRC/forge-gui-neo/target mit Spieltisch in target/clash3d (starten mit tools/neoforge_play.sh)"

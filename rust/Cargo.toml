@@ -11,8 +11,13 @@ license = "GPL-3.0-or-later"
 [lib]
 crate-type = ["cdylib"]
 
+[features]
+# Doku der Klassen für die Godot-Hilfe (F1 im Editor); der Export (tools/export_table.sh) baut ohne
+default = ["register-docs"]
+register-docs = ["godot/register-docs"]
+
 [dependencies]
-godot = { version = "0.5.5", features = ["api-4-7", "register-docs"] }
+godot = { version = "0.5.5", features = ["api-4-7"] }
 clash-protocol = { path = "crates/clash-protocol" }
 clash-forge-client = { path = "crates/clash-forge-client" }
 serde_json = "1"

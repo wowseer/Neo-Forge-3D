@@ -17,7 +17,7 @@ repository.
 | File | What |
 |---|---|
 | `src/forge/neo/clash/ClashTable.java` | Wrapper for NeoForge: reads the settings (system property → NeoForge setting → environment variable), decides whether a match runs on the 3D table (`useFor`: switched on, 1 vs 1, no hot seat, no unsupported variant), starts the table via `clash.forgebridge.TableLauncher`, provides the remote-controlled player (`ClashBridge.remotePlayer`) |
-| `neoforge-host.patch` | Changes to NeoForge's own classes against NeoForge upstream: `NeoGame` (3D table for the human seat of a 1 vs 1 match, `NeoMatchUI` runs invisibly as a spectator, NeoForge's window says the match runs in the 3D table window), `adventure/NeoDuelBridge` (the same for Adventure duels: they are set up by Forge's Adventure and start there instead of in `NeoGame`; the human, last in the Adventure's seat list, moves to seat 0 – `ClashTable.openForDuel`), `SafeAi` (do not replace the remote seat with the AI fallback), `NeoMain` (test command `clash`), `SettingsPanel` (section "3D table (Neo Forge 3D)" at the top of the *Table* tab), draft ratings (`draft/DraftRating`, `ui/DraftScreen`, `card/CardNode`, `ui/DeckBuilderScreen`, `deck/DeckContext` with `DraftDeckContext`/`NetPoolContext`, `NeoApp`: switching the rating on mid-draft puts the numbers on the right cards, the rating also shows on cards without art, unranked cards get no number instead of 0, and deck building from a draft or sealed pool shows the rating on pool cards, deck tiles and deck/sideboard rows), language files, `neo.css` |
+| `neoforge-host.patch` | Changes to NeoForge's own classes against NeoForge upstream: `SettingsPanel` hides the Godot paths when a table is bundled, `NeoGame` (3D table for the human seat of a 1 vs 1 match, `NeoMatchUI` runs invisibly as a spectator, NeoForge's window says the match runs in the 3D table window), `adventure/NeoDuelBridge` (the same for Adventure duels: they are set up by Forge's Adventure and start there instead of in `NeoGame`; the human, last in the Adventure's seat list, moves to seat 0 – `ClashTable.openForDuel`), `SafeAi` (do not replace the remote seat with the AI fallback), `NeoMain` (test command `clash`), `SettingsPanel` (section "3D table (Neo Forge 3D)" at the top of the *Table* tab), draft ratings (`draft/DraftRating`, `ui/DraftScreen`, `card/CardNode`, `ui/DeckBuilderScreen`, `deck/DeckContext` with `DraftDeckContext`/`NetPoolContext`, `NeoApp`: switching the rating on mid-draft puts the numbers on the right cards, the rating also shows on cards without art, unranked cards get no number instead of 0, and deck building from a draft or sealed pool shows the rating on pool cards, deck tiles and deck/sideboard rows), language files, `neo.css` |
 
 The bridge itself (`clash.forgebridge` from `forge-bridge/src/`, without the program entry point
 `app/`) is copied in by `tools/sync_neoforge.sh`.
@@ -43,11 +43,18 @@ tree (the entry then starts nothing). `neoforge_menu.sh` writes the same entry, 
 `neoforge_build.sh` applies `neoforge-host.patch` if the NeoForge repository does not have it yet,
 runs `tools/sync_neoforge.sh`, copies `forge-gui-neo` into the Forge checkout and builds with
 `mvn package -pl forge-gui-neo -am` (Maven from the `PATH`, otherwise
-`~/.local/opt/apache-maven-*/bin/mvn`, or `MVN=…`). Java 17 or newer.
+`~/.local/opt/apache-maven-*/bin/mvn`, or `MVN=…`). Java 17 or newer. Finally it exports the game
+table (`tools/export_table.sh`: Rust in release mode, Godot export "Linux" with the game data
+embedded) and puts it into `forge-gui-neo/target/clash3d/` (`neo-forge-3d.x86_64` +
+`libneo_forge_3d.so`). The export needs Godot's export templates of the editor's version
+(`~/.local/share/godot/export_templates/<version>/`, *Editor → Manage Export Templates*).
 
-`neoforge_play.sh` passes the Godot executable (`godot` from the `PATH`, or `CLASH_GODOT`) and
-the project folder (`godot/` of this repository) as defaults, so only the switch needs to be
-turned on. The Godot extension has to be built (`cd rust && cargo build`).
+**Bundled table:** NeoForge looks for `clash3d/` next to its classes (source build:
+`target/classes` → `target/clash3d/`; package: next to the jar) and starts the exported table from
+there – no Godot installation, no project folder (`ClashTable.bundledTable`). Only without it does
+it fall back to the Godot program plus the project folder, which `neoforge_play.sh` passes as
+defaults (`CLASH_GODOT`, `CLASH_PROJECT`); then the Godot extension has to be built
+(`cd rust && cargo build`).
 
 Installing by hand instead:
 
@@ -64,16 +71,18 @@ path (see `tools/neoforge_clash.sh`).
 ## Enabling
 
 In NeoForge under *Settings → Table → 3D table (Neo Forge 3D)*: "Play 1 vs 1 games on the 3D
-table" = yes; "Godot program" (Godot 4.7) and "Neo Forge 3D project folder" (`godot/` of Neo
-Forge 3D) if the start script does not provide them. Applies from the next match.
+table" = yes. Without a bundled table the section also shows "Godot program" (Godot 4.7) and
+"Neo Forge 3D project folder" (`godot/` of Neo Forge 3D) for when the start script does not provide
+them. Applies from the next match.
 
 Each value is taken from the first source that has it:
 
 | System property (this start only) | NeoForge setting | Environment variable (default) | Meaning |
 |---|---|---|---|
 | `neo.clash=true` | `clash3d` | `NEOFORGE_CLASH=true` | use the 3D table |
+| `neo.clash.table` | `clash3d.table` | `CLASH_TABLE` | exported table to start (otherwise the bundled one in `clash3d/`) |
 | `neo.clash.godot` | `clash3d.godot` | `CLASH_GODOT` | Godot executable (otherwise `godot`) |
-| `neo.clash.project` | `clash3d.project` | `CLASH_PROJECT` | Godot project folder of Neo Forge 3D |
+| `neo.clash.project` | `clash3d.project` | `CLASH_PROJECT` | Godot project folder of Neo Forge 3D (only without an exported table) |
 
 If the table does not connect within 2 minutes, NeoForge plays with its own table.
 
