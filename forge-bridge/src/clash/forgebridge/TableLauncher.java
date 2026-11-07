@@ -28,16 +28,28 @@ public final class TableLauncher {
     /**
      * Wie der Tisch gestartet wird.
      *
-     * @param program   ausführbares Programm (z. B. der Godot-Pfad)
+     * @param program   ausführbares Programm (z. B. der Godot-Pfad oder ein exportierter Tisch)
      * @param arguments Argumente vor {@code --} (bei Godot {@code --path <projekt>})
      * @param timeoutMs so lange wird auf die Verbindung gewartet (Start, Shader-Übersetzung)
      * @param log       Datei für die Ausgaben des Tisch-Prozesses ({@code null} = verwerfen)
+     * @param window    wo sich das Fenster öffnen soll (Fensterübergabe, als Godot-Argumente
+     *                  {@link TableWindow#godotArgs()}); {@code null} = wo der Tisch will
      */
-    public record Config(String program, List<String> arguments, int timeoutMs, File log) {
+    public record Config(String program, List<String> arguments, int timeoutMs, File log, TableWindow window) {
+        /** Ohne Fensterlage. */
+        public Config(String program, List<String> arguments, int timeoutMs, File log) {
+            this(program, arguments, timeoutMs, log, null);
+        }
+
         /** Godot-Tisch: {@code godot --path project}, 120 s Wartezeit, Log im Temp-Ordner. */
         public Config(String godot, String project) {
             this(godot, List.of("--path", project), 120_000,
-                    new File(System.getProperty("java.io.tmpdir"), "clash-table.log"));
+                    new File(System.getProperty("java.io.tmpdir"), "clash-table.log"), null);
+        }
+
+        /** Dieselbe Konfiguration mit Fensterlage {@code w}. */
+        public Config withWindow(TableWindow w) {
+            return new Config(program, arguments, timeoutMs, log, w);
         }
     }
 
@@ -53,6 +65,9 @@ public final class TableLauncher {
             List<String> cmd = new ArrayList<>();
             cmd.add(config.program());
             cmd.addAll(config.arguments());
+            if (config.window() != null) {
+                cmd.addAll(config.window().godotArgs());
+            }
             cmd.add("--");
             cmd.add("--clash-port=" + server.getLocalPort());
             ProcessBuilder pb = new ProcessBuilder(cmd).redirectErrorStream(true);
@@ -106,6 +121,14 @@ public final class TableLauncher {
         /** Läuft der Tisch-Prozess noch? */
         public boolean isAlive() {
             return process.isAlive();
+        }
+
+        /**
+         * Zuletzt gemeldete Lage des Tisch-Fensters ({@link ClashBridge#tableWindow()}), z. B. um
+         * das Fenster des Gastgebers nach der Partie dorthin zu legen; {@code null} = keine.
+         */
+        public TableWindow window() {
+            return ClashBridge.tableWindow();
         }
 
         private void onTableClosed() {

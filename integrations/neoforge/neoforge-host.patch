@@ -31,28 +31,29 @@ index 53d5f0c..8428db5 100644
                  banner("PHASE 2 - JavaFX interface");
                  // Los textos del motor, antes de construir NeoApp: hay campos
 diff --git a/forge-gui-neo/src/main/java/forge/neo/adventure/NeoDuelBridge.java b/forge-gui-neo/src/main/java/forge/neo/adventure/NeoDuelBridge.java
-index 9f82385..d88d8c3 100644
+index 9f82385..3a3a4a6 100644
 --- a/forge-gui-neo/src/main/java/forge/neo/adventure/NeoDuelBridge.java
 +++ b/forge-gui-neo/src/main/java/forge/neo/adventure/NeoDuelBridge.java
-@@ -76,56 +76,94 @@ public final class NeoDuelBridge {
+@@ -76,56 +76,112 @@ public final class NeoDuelBridge {
          };
          NeoWindow.takeOver();
  
 -        Platform.runLater(() -> {
 -            final TableScreen table = new TableScreen(NeoWindow.cardWidth(), NeoWindow.sideWidth());
--            table.getDetailPanel().setTextZoom(NeoSettings.getDouble(NeoSettings.TEXT_ZOOM, 1.15));
--            // OJO: sin CardZoom.install. La mesa ya trae su propio zoom de click
--            // derecho; con los dos, cada click abria una segunda vista y habia que
--            // cerrar dos veces (reportado jugando).
--            NeoWindow.show(table, "NeoForge · Adventure · duelo contra " + enemyName);
 +        // Neo Forge 3D: im 1 gegen 1 spielt der Mensch am 3D-Tisch (Godot), wie in NeoGame. Godot zu
 +        // starten dauert ein paar Sekunden: in einem eigenen Faden, nicht in dem von libGDX (play()
 +        // muss sofort zurueckkehren). Ohne 3D-Tisch (aus, mehr Spieler, Godot startet nicht) bleibt
 +        // alles wie bisher.
 +        final boolean auto = Boolean.getBoolean("neo.adventure.auto");
++        // Fensteruebergabe: der Tisch oeffnet sich, wo das Adventure-Fenster ist, das versteckt wird,
++        // sobald er verbunden ist; unser 2D-Fenster erscheint dann gar nicht.
 +        final Thread opener = new Thread(() -> {
 +            final clash.forgebridge.TableLauncher.Session table3d = auto ? null
-+                    : forge.neo.clash.ClashTable.openForDuel(players, human, rules.getGameType(), variants);
++                    : forge.neo.clash.ClashTable.openForDuel(players, human, rules.getGameType(), variants,
++                            NeoWindow.tableWindow());
++            if (table3d != null) {
++                NeoWindow.hideAdventure();
++            }
 +            Platform.runLater(() -> startOnFx(match, rules, variants, players, human, enemyName, back, auto, table3d));
 +        }, "neo-adventure-start");
 +        opener.setDaemon(true);
@@ -70,26 +71,25 @@ index 9f82385..d88d8c3 100644
 +                                  final RegisteredPlayer human, final String enemyName,
 +                                  final Runnable back, final boolean auto,
 +                                  final clash.forgebridge.TableLauncher.Session table3d) {
-+        final TableScreen table = new TableScreen(NeoWindow.cardWidth(), NeoWindow.sideWidth());
-+        table.getDetailPanel().setTextZoom(NeoSettings.getDouble(NeoSettings.TEXT_ZOOM, 1.15));
-+        // OJO: sin CardZoom.install. La mesa ya trae su propio zoom de click
-+        // derecho; con los dos, cada click abria una segunda vista y habia que
-+        // cerrar dos veces (reportado jugando).
-+        NeoWindow.show(table, "NeoForge · Adventure · duelo contra " + enemyName);
- 
--            final TableBinder binder = new TableBinder(table);
--            final NeoMatchUI gui = new NeoMatchUI(Boolean.getBoolean("neo.adventure.auto")
--                    ? NeoMatchUI.Mode.AUTO_PLAY : NeoMatchUI.Mode.HUMAN, false);
--            gui.setAutoPayMana(NeoSettings.autoPayMana());
--            gui.setEnding(NeoMatchUI.Ending.QUEST);
-+        final TableBinder binder = new TableBinder(table);
 +        final NeoMatchUI gui = new NeoMatchUI(table3d != null ? NeoMatchUI.Mode.OBSERVE
 +                : auto ? NeoMatchUI.Mode.AUTO_PLAY : NeoMatchUI.Mode.HUMAN, false);
 +        gui.setAutoPayMana(NeoSettings.autoPayMana());
 +        gui.setEnding(NeoMatchUI.Ending.QUEST);
-+        if (table3d != null) {
-+            binder.setPrompt(forge.neo.NeoText.get("clash.playing"));
-+        } else {
++        // Neo Forge 3D: am 3D-Tisch kein eigenes Fenster und keine Mesa (siehe play)
++        final TableScreen table = table3d != null ? null
++                : new TableScreen(NeoWindow.cardWidth(), NeoWindow.sideWidth());
++        if (table != null) {
+             table.getDetailPanel().setTextZoom(NeoSettings.getDouble(NeoSettings.TEXT_ZOOM, 1.15));
+             // OJO: sin CardZoom.install. La mesa ya trae su propio zoom de click
+             // derecho; con los dos, cada click abria una segunda vista y habia que
+             // cerrar dos veces (reportado jugando).
+             NeoWindow.show(table, "NeoForge · Adventure · duelo contra " + enemyName);
+-
+             final TableBinder binder = new TableBinder(table);
+-            final NeoMatchUI gui = new NeoMatchUI(Boolean.getBoolean("neo.adventure.auto")
+-                    ? NeoMatchUI.Mode.AUTO_PLAY : NeoMatchUI.Mode.HUMAN, false);
+-            gui.setAutoPayMana(NeoSettings.autoPayMana());
+-            gui.setEnding(NeoMatchUI.Ending.QUEST);
              gui.setBinder(binder);
              gui.setTable(table);
              binder.setMatchUi(gui);
@@ -103,7 +103,6 @@ index 9f82385..d88d8c3 100644
 -            log("atajos: prioridad=" + NeoShortcuts.describe(NeoShortcuts.Action.PASS_PRIORITY)
 -                    + " registro=" + NeoShortcuts.describe(NeoShortcuts.Action.GAME_LOG)
 -                    + " | ajustes en " + NeoSettings.path());
--            spaceProbeLater(table);
 +        }
 +        // Que teclas manda aqui, dicho en el registro. Una linea por duelo,
 +        // y esta a proposito: al reportar "los atajos no me funcionan en la
@@ -114,7 +113,9 @@ index 9f82385..d88d8c3 100644
 +        log("atajos: prioridad=" + NeoShortcuts.describe(NeoShortcuts.Action.PASS_PRIORITY)
 +                + " registro=" + NeoShortcuts.describe(NeoShortcuts.Action.GAME_LOG)
 +                + " | ajustes en " + NeoSettings.path());
-+        spaceProbeLater(table);
++        if (table != null) {
+             spaceProbeLater(table);
++        }
  
 -            final Thread engine = new Thread(() -> {
 -                try {
@@ -146,12 +147,7 @@ index 9f82385..d88d8c3 100644
 -                    e.printStackTrace();
 -                } finally {
 -                    gui.shutdown();
--                    NeoWindow.giveBack(back);
-                 }
--            }, "Game-neo-adventure");
--            engine.setDaemon(true);
--            engine.start();
--        });
++                }
 +                over.await();
 +                log("duelo terminado, gana: "
 +                        + (gui.getGameView() == null ? "?" : gui.getGameView().getWinningPlayerName()));
@@ -159,11 +155,26 @@ index 9f82385..d88d8c3 100644
 +                log("el duelo ha fallado: " + e);
 +                e.printStackTrace();
 +            } finally {
-+                if (table3d != null) {
-+                    table3d.close();
-+                }
 +                gui.shutdown();
-+                NeoWindow.giveBack(back);
++                if (table3d != null) {
++                    // Erst das Adventure dorthin, wo der Tisch war, dann den Tisch schliessen
++                    // (nicht im Faden von libGDX: close wartet, bis Godot beendet ist)
++                    final clash.forgebridge.TableWindow last = table3d.window();
++                    log("3D-Tisch: Adventure zurueck an die Lage des Tisches: "
++                            + (last == null ? "keine gemeldet" : last));
++                    NeoWindow.giveBack(() -> {
++                        final Thread closer = new Thread(table3d::close, "neo-adventure-3d-close");
++                        closer.setDaemon(true);
++                        closer.start();
++                        back.run();
++                    }, last);
++                } else {
+                     NeoWindow.giveBack(back);
+                 }
+-            }, "Game-neo-adventure");
+-            engine.setDaemon(true);
+-            engine.start();
+-        });
 +            }
 +        }, "Game-neo-adventure");
 +        engine.setDaemon(true);
@@ -171,6 +182,65 @@ index 9f82385..d88d8c3 100644
      }
  
      /**
+diff --git a/forge-gui-neo/src/main/java/forge/neo/adventure/NeoWindow.java b/forge-gui-neo/src/main/java/forge/neo/adventure/NeoWindow.java
+index d456cfc..785ad50 100644
+--- a/forge-gui-neo/src/main/java/forge/neo/adventure/NeoWindow.java
++++ b/forge-gui-neo/src/main/java/forge/neo/adventure/NeoWindow.java
+@@ -73,6 +73,36 @@ final class NeoWindow {
+      * {@code then} en el hilo de libGDX.
+      */
+     static void giveBack(final Runnable then) {
++        giveBack(then, null);
++    }
++
++    /**
++     * Neo Forge 3D: Lage des Adventure-Fensters (beim {@link #takeOver}) fuer den 3D-Tisch, der sich
++     * dort oeffnet (Fensteruebergabe).
++     */
++    static clash.forgebridge.TableWindow tableWindow() {
++        final int[] c = adventureClient;
++        final clash.forgebridge.TableWindow.Mode mode = adventureFullscreen
++                ? clash.forgebridge.TableWindow.Mode.FULLSCREEN
++                : adventureMaximized ? clash.forgebridge.TableWindow.Mode.MAXIMIZED
++                : clash.forgebridge.TableWindow.Mode.WINDOWED;
++        return c == null ? new clash.forgebridge.TableWindow(0, 0, 0, 0, mode)
++                : new clash.forgebridge.TableWindow(c[0], c[1], c[2], c[3], mode);
++    }
++
++    /** Neo Forge 3D: das Adventure-Fenster verstecken, solange der 3D-Tisch zu sehen ist. */
++    static void hideAdventure() {
++        final Lwjgl3Window window = adventureWindow;
++        if (window != null) {
++            Gdx.app.postRunnable(() -> window.setVisible(false));
++        }
++    }
++
++    /**
++     * Wie {@link #giveBack(Runnable)}; mit {@code table} (Neo Forge 3D) kommt das Adventure dorthin,
++     * wo das Fenster des 3D-Tischs zuletzt war, statt wo unsere Ventana war.
++     */
++    static void giveBack(final Runnable then, final clash.forgebridge.TableWindow table) {
+         if (adventureGui != null) {
+             GuiBase.setInterface(adventureGui);
+         }
+@@ -85,9 +115,14 @@ final class NeoWindow {
+             // duelo es solo de la mesa. Posicion y tamanyo si siguen a los de
+             // nuestra ventana, pero solo si esta en el mismo modo.
+             final boolean full = adventureFullscreen;
+-            final boolean sameMode = stage != null && stage.isFullScreen() == adventureFullscreen;
+-            final int[] client = sameMode ? stageClient() : adventureClient;
+-            final boolean maximized = sameMode ? stage.isMaximized() : adventureMaximized;
++            final boolean fromTable = table != null && table.width() > 0;
++            final boolean sameMode = fromTable
++                    ? (table.mode() == clash.forgebridge.TableWindow.Mode.FULLSCREEN) == adventureFullscreen
++                    : stage != null && stage.isFullScreen() == adventureFullscreen;
++            final int[] client = !sameMode ? adventureClient
++                    : fromTable ? new int[] {table.x(), table.y(), table.width(), table.height()} : stageClient();
++            final boolean maximized = !sameMode ? adventureMaximized
++                    : fromTable ? table.mode() == clash.forgebridge.TableWindow.Mode.MAXIMIZED : stage.isMaximized();
+             final Lwjgl3Window window = adventureWindow;
+             Gdx.app.postRunnable(() -> {
+                 if (window != null) {
 diff --git a/forge-gui-neo/src/main/java/forge/neo/card/CardNode.java b/forge-gui-neo/src/main/java/forge/neo/card/CardNode.java
 index 5d6b06c..ecd4224 100644
 --- a/forge-gui-neo/src/main/java/forge/neo/card/CardNode.java
@@ -785,10 +855,10 @@ index 9575e8c..ae327a8 100644
      public forge.deck.CardPool autoBuild(final List<forge.item.PaperCard> cards) {
          return LimitedAutoBuild.build(cards, null);
 diff --git a/forge-gui-neo/src/main/java/forge/neo/match/NeoGame.java b/forge-gui-neo/src/main/java/forge/neo/match/NeoGame.java
-index 4d3fc9a..b08c6f5 100644
+index 4d3fc9a..68cc6df 100644
 --- a/forge-gui-neo/src/main/java/forge/neo/match/NeoGame.java
 +++ b/forge-gui-neo/src/main/java/forge/neo/match/NeoGame.java
-@@ -344,7 +344,19 @@ public final class NeoGame {
+@@ -344,7 +344,23 @@ public final class NeoGame {
              FModel.getPreferences().setPref(FPref.MATCH_AI_TIMEOUT, "2");
          }
  
@@ -796,20 +866,24 @@ index 4d3fc9a..b08c6f5 100644
 +        // Neo Forge 3D: im 1 gegen 1 der 3D-Tisch (Godot) statt NeoMatchUI fuer den menschlichen
 +        // Sitz. NeoMatchUI laeuft dann nur unsichtbar als Zuschauer mit (wie im Modus OBSERVE ohne
 +        // Tisch). Mehr Spieler, Hot Seat oder Planechase/Archenemy/Vanguard: NeoForges Tisch.
-+        final clash.forgebridge.TableLauncher.Session table3d =
-+                mode == NeoMatchUI.Mode.HUMAN && forge.neo.clash.ClashTable.useFor(opponents,
-+                        forge.neo.look.RivalSetup.isPerRival(aiProfile)
-+                                && forge.neo.look.RivalSetup.anyHuman(opponents),
-+                        seating == null ? EnumSet.of(format.getGameType()) : seating.variants())
-+                        ? forge.neo.clash.ClashTable.open() : null;
-+        if (table3d != null && binder != null) {
++        // Fensteruebergabe: der Tisch oeffnet sich, wo NeoForges Fenster ist, das solange
++        // versteckt wird, und NeoForge kommt nach der Partie dort wieder, wo der Tisch war.
++        final boolean want3d = mode == NeoMatchUI.Mode.HUMAN && forge.neo.clash.ClashTable.useFor(opponents,
++                forge.neo.look.RivalSetup.isPerRival(aiProfile)
++                        && forge.neo.look.RivalSetup.anyHuman(opponents),
++                seating == null ? EnumSet.of(format.getGameType()) : seating.variants());
++        if (want3d && binder != null) {
 +            binder.setPrompt(forge.neo.NeoText.get("clash.playing"));
 +        }
++        final javafx.stage.Stage window3d = want3d && binder != null
++                ? forge.neo.clash.ClashTable.stageOf(binder.getTable()) : null;
++        final clash.forgebridge.TableLauncher.Session table3d =
++                want3d ? forge.neo.clash.ClashTable.open(window3d) : null;
 +        final NeoMatchUI gui = new NeoMatchUI(table3d != null ? NeoMatchUI.Mode.OBSERVE : mode, verbose);
          gui.setAutoPayMana(autoPayMana);
          gui.setEnding(ending);
          // Solo comprobadores: la interfaz de la partida, para hacer de jugador.
-@@ -352,7 +364,7 @@ public final class NeoGame {
+@@ -352,7 +368,7 @@ public final class NeoGame {
          if (forTest != null) {
              forTest.accept(gui);
          }
@@ -818,7 +892,7 @@ index 4d3fc9a..b08c6f5 100644
              gui.setBinder(binder);
              gui.setTable(binder.getTable());
              // El menu de pausa necesita poder decirle "sal de aqui".
-@@ -375,6 +387,11 @@ public final class NeoGame {
+@@ -375,6 +391,11 @@ public final class NeoGame {
              humanSeat = seating == null ? format.register(deck, seats)
                      : seating.human(deck, seats);
              humanSeat.setPlayer(forge.neo.look.NeoPlayers.human());
@@ -830,7 +904,7 @@ index 4d3fc9a..b08c6f5 100644
              players.add(humanSeat);
          }
  
-@@ -478,7 +495,7 @@ public final class NeoGame {
+@@ -478,7 +499,7 @@ public final class NeoGame {
          // FModel.getPreferences() y nadie la habria vuelto a mirar.
          applyNeoRules(rules);
  
@@ -839,12 +913,12 @@ index 4d3fc9a..b08c6f5 100644
              // Sin jugadores humanos, HostedMatch.startGame() registra el
              // espectador el solo pidiendo una GUI a IGuiBase. Solo hay que
              // decirle cual devolver.
-@@ -515,6 +532,9 @@ public final class NeoGame {
+@@ -515,6 +536,9 @@ public final class NeoGame {
                      timeoutSecs, turns);
          }
  
 +        if (table3d != null) {
-+            table3d.close();
++            forge.neo.clash.ClashTable.close(table3d, window3d);
 +        }
          final NeoMatchUI.Exit exit = gui.getExitAction();
          // La vida ANTES de shutdown(): despues la vista ya no tiene por que

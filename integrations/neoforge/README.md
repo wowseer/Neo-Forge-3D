@@ -86,6 +86,13 @@ Each value is taken from the first source that has it:
 
 If the table does not connect within 2 minutes, NeoForge plays with its own table.
 
+**Window handoff:** the table opens where NeoForge's window is (`ClashTable.open(Stage)`, also
+maximised or full screen) and NeoForge hides its window once the table is connected; after the
+match NeoForge comes back where the table window was last (`ClashTable.close(Session, Stage)`,
+from the table's `window` reports). Adventure duels go from the Adventure window straight to the
+table and back (`NeoWindow.tableWindow()`, `hideAdventure()`, `giveBack(…, TableWindow)` in
+`neoforge-host.patch`); NeoForge's 2D duel window is not shown.
+
 ## Updating the patch
 
 When NeoForge's classes change in the repository (committed locally on a branch, never pushed),

@@ -25,6 +25,13 @@ pub fn request_state(viewer: Option<PlayerId>) -> Value {
     json!({ "cmd": "state", "viewer": viewer.map_or(-1, i64::from) })
 }
 
+/// Lage des Tisch-Fensters melden (eingebettet: Fensterübergabe, der Gastgeber legt sein Fenster nach
+/// der Partie dorthin). Pixel des Bildschirms, Inhaltsbereich ohne Rahmen; `mode` =
+/// `"windowed"`, `"maximized"` oder `"fullscreen"`.
+pub fn window(x: i32, y: i32, width: i32, height: i32, mode: &str) -> Value {
+    json!({ "cmd": "window", "x": x, "y": y, "width": width, "height": height, "mode": mode })
+}
+
 /// Brücke beenden (eigenständiger Betrieb; eingebettet ignoriert).
 pub fn quit() -> Value {
     json!({ "cmd": "quit" })
@@ -99,6 +106,12 @@ pub fn debug_infinite_mana(seat: PlayerId, on: bool) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn window_has_geometry_and_mode() {
+        let w = window(10, 20, 1920, 1080, "maximized");
+        assert_eq!(w, json!({"cmd": "window", "x": 10, "y": 20, "width": 1920, "height": 1080, "mode": "maximized"}));
+    }
 
     #[test]
     fn start_match_marks_remote_seats() {

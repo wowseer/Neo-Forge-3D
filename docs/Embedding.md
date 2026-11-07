@@ -143,13 +143,22 @@ table.close();
   fallback of the host does not replace it)?
 - If the player closes the table window in the middle of a match, their seats concede
   (`ClashBridge.concedeRemotePlayers`).
+- **Window handoff** (only one window visible): `new TableLauncher.Config(…).withWindow(new
+  TableWindow(x, y, width, height, Mode.MAXIMIZED))` opens the table where your window is
+  (content area in screen pixels; passed to Godot as `--position`, `--resolution`,
+  `--maximized` / `--fullscreen`). Hide your window once `launch` returns; the table reports its
+  window while it runs (`session.window()` / `ClashBridge.tableWindow()`), so after the match you
+  can put your window there, show it, and then call `session.close()`. NeoForge's version:
+  `ClashTable.open(Stage)` / `ClashTable.close(Session, Stage)`.
+- Once the table is gone, the bridge answers no request any more – the engine decides for the
+  remote seats (and they concede, see above).
 - Your own transport instead of `TableLauncher`: `ClashBridge.attach(outputStream, inputStream, onClose)`.
 - A table other than Godot only has to understand `--clash-port=N`, connect to `127.0.0.1:N` and
   speak the protocol – in Rust: `ForgeClient::connect(port)` with
   `clash_forge_client::host_port(std::env::args())`. The `autoplay` example does exactly that
   when started with `--clash-port=N`.
 
-Only `ClashBridge` and `TableLauncher` are public API. `clash.forgebridge.engine` is internal and
+Only `ClashBridge`, `TableLauncher` and `TableWindow` are public API. `clash.forgebridge.engine` is internal and
 may change.
 
 ## 4. NeoForge

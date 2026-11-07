@@ -72,6 +72,16 @@ public final class ClashBridge {
         return BridgeCore.currentGame();
     }
 
+    /**
+     * Lage des Tisch-Fensters, die der Tisch zuletzt gemeldet hat (Befehl {@code window}), für die
+     * Fensterübergabe; {@code null}, solange er keine gemeldet hat (bei jeder neuen Verbindung
+     * zurückgesetzt).
+     */
+    public static TableWindow tableWindow() {
+        com.google.gson.JsonObject w = BridgeCore.tableWindow();
+        return w == null ? null : TableWindow.fromJson(w);
+    }
+
     /** Läuft die Brücke eingebettet ({@link #attach})? */
     public static boolean isEmbedded() {
         return BridgeCore.isEmbedded();

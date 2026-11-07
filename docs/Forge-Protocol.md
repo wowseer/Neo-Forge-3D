@@ -37,7 +37,18 @@ NeoGame.play ── ClashTable.open() → TableLauncher.launch(): open port, sta
 - Flow: `ready` (with `embedded: true`) → `match_started` (without state; the state comes with
   the first request) → requests as usual → `game_over` (from `GameEventGameOutcome`) → NeoForge
   closes the socket, Godot exits. `start_match` is not allowed when embedded.
-- If the player closes the Godot window during the match, their seat concedes.
+- If the player closes the Godot window during the match, their seat concedes. From then on the
+  bridge answers no request any more: open and later decisions of that seat are left to the engine
+  (it would otherwise wait forever for the next one before Forge applies the concession).
+- **Window handoff:** only one window is visible at a time. NeoForge starts the table where its own
+  window is (`TableLauncher.Config.window` → Godot arguments `--position X,Y --resolution WxH`,
+  plus `--maximized` / `--fullscreen`; content area in screen pixels, `TableWindow`) and hides
+  its window as soon as the table is connected. The table reports its window with the command
+  `window` whenever it moves or changes size or mode (`ForgeBridge`, at most four times a
+  second); after the match NeoForge puts its window there, shows it, and only then closes the
+  table (`ClashTable.open(Stage)` / `ClashTable.close(Session, Stage)`). Adventure duels hand the
+  Adventure window over directly (`NeoWindow.tableWindow()`, `hideAdventure()`, `giveBack(…,
+  TableWindow)`); NeoForge's 2D duel window does not appear at all.
 - NeoMatchUI runs invisibly as a spectator (like NeoForge's OBSERVE mode without a table);
   hot-seat rivals are played by the AI when the 3D table is used.
 
@@ -224,6 +235,7 @@ JSON Lines, UTF-8: exactly one JSON message per line.
 | `debug_card_names` | – | debug window: answer `debug_card_names` with all card names |
 | `debug_add_card` | `seat`, `name` | debug: create a new card and put it into the player's hand |
 | `debug_infinite_mana` | `seat`, `on` | debug: refill the player's mana pool to 50 per mana type (WUBRGC) on every phase change and spell, or turn that off |
+| `window` | `x`, `y`, `width`, `height` (screen pixels, content area without frame), `mode` (`windowed`, `maximized`, `fullscreen`) | embedded: the table reports where its window is (whenever it changes; not while minimised). The host puts its own window there after the match (window handoff, `ClashBridge.tableWindow()`); standalone it is only stored |
 | `quit` | – | ends the process |
 
 ### Messages (Forge → Godot, stdout)

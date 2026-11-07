@@ -6,13 +6,15 @@
 //!   (Forge-Logausgaben) landet in `user://forge-bridge.log`.
 //! - Eingebettet (Godot von einem Gastgeber wie NeoForge gestartet mit `-- --clash-port=N`):
 //!   statt des Java-Prozesses eine TCP-Verbindung zu `127.0.0.1:N`, gleiches Protokoll; die
-//!   Partie startet der Gastgeber.
+//!   Partie startet der Gastgeber. Für die Fensterübergabe meldet der Knoten dabei die Lage seines
+//!   Fensters (Befehl `window`), damit der Gastgeber nach der Partie dort wieder erscheint.
 
 use std::path::{Path, PathBuf};
 
 use clash_forge_client::{ForgeClient, Incoming, LaunchConfig};
 use clash_protocol::{command, Value};
-use godot::classes::{INode, Node, ProjectSettings};
+use godot::classes::display_server::WindowMode;
+use godot::classes::{DisplayServer, INode, Node, ProjectSettings};
 use godot::prelude::*;
 
 use crate::rules::json;
@@ -76,6 +78,9 @@ pub struct ForgeBridge {
     /// Verbindung (Java-Prozess oder Gastgeber), None = keine.
     client: Option<ForgeClient>,
     ready: bool,
+    /// Zuletzt gemeldete Fensterlage (eingebettet, Fensterübergabe) und Zeit bis zur nächsten Prüfung.
+    window_sent: Option<(i32, i32, i32, i32, &'static str)>,
+    window_check: f64,
     base: Base<Node>,
 }
 
@@ -94,6 +99,8 @@ impl INode for ForgeBridge {
             log_messages: false,
             client: None,
             ready: false,
+            window_sent: None,
+            window_check: 0.0,
             base,
         }
     }
@@ -104,7 +111,8 @@ impl INode for ForgeBridge {
         }
     }
 
-    fn process(&mut self, _delta: f64) {
+    fn process(&mut self, delta: f64) {
+        self.report_window(delta);
         let mut messages = Vec::new();
         let mut closed = false;
         if let Some(client) = self.client.as_mut() {
@@ -447,6 +455,32 @@ impl ForgeBridge {
 }
 
 /// `res://`/`user://` → absoluter Pfad (andere Pfade unverändert).
+impl ForgeBridge {
+    /// Eingebettet (Gastgeber wie NeoForge): Lage des Fensters melden, sobald sie sich ändert
+    /// (höchstens viermal je Sekunde), damit der Gastgeber nach der Partie sein Fenster dorthin legt
+    /// (Fensterübergabe). Minimiert wird nichts gemeldet – zurück kommt die letzte sichtbare Lage.
+    fn report_window(&mut self, delta: f64) {
+        self.window_check -= delta;
+        if self.window_check > 0.0 || !self.ready || !self.client.as_ref().is_some_and(ForgeClient::is_hosted) {
+            return;
+        }
+        self.window_check = 0.25;
+        let ds = DisplayServer::singleton();
+        let mode = match ds.window_get_mode() {
+            WindowMode::MINIMIZED => return,
+            WindowMode::MAXIMIZED => "maximized",
+            WindowMode::FULLSCREEN | WindowMode::EXCLUSIVE_FULLSCREEN => "fullscreen",
+            _ => "windowed",
+        };
+        let (pos, size) = (ds.window_get_position(), ds.window_get_size());
+        let now = (pos.x, pos.y, size.x, size.y, mode);
+        if self.window_sent != Some(now) {
+            self.window_sent = Some(now);
+            self.send_value(&command::window(pos.x, pos.y, size.x, size.y, mode));
+        }
+    }
+}
+
 fn globalize(path: &GString) -> String {
     ProjectSettings::singleton().globalize_path(path).to_string()
 }

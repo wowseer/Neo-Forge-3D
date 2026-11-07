@@ -72,6 +72,10 @@ public final class BridgeCore {
     private static volatile Game currentGame;
     /** Eingebettet in einen Gastgeber (NeoForge) statt eigener Prozess. */
     private static volatile boolean embedded;
+    /** Zuletzt gemeldete Lage des Tisch-Fensters (Befehl {@code window}), siehe {@link #tableWindow()}. */
+    private static volatile JsonObject tableWindow;
+    /** Eingebettet: Verbindung zum Tisch beendet, Anfragen entscheidet die Engine. */
+    private static volatile boolean disconnected;
 
     private BridgeCore() {}
 
@@ -96,6 +100,11 @@ public final class BridgeCore {
         System.exit(0);
     }
 
+    /** Zuletzt vom Tisch gemeldete Fensterlage (Befehl {@code window}) oder {@code null}. */
+    public static JsonObject tableWindow() {
+        return tableWindow;
+    }
+
     /**
      * Eingebetteter Betrieb (z. B. in NeoForge): Die Partie startet der Gastgeber selbst; Neo Forge 3D
      * ist nur der Spieltisch. Nachrichten gehen auf {@code os}, Befehle kommen von {@code is}
@@ -107,6 +116,8 @@ public final class BridgeCore {
     public static void attach(java.io.OutputStream os, java.io.InputStream is, Runnable onClose) {
         out = new PrintStream(os, true, StandardCharsets.UTF_8);
         embedded = true;
+        tableWindow = null;
+        disconnected = false;
         sendReady();
         Thread reader = new Thread(() -> {
             try {
@@ -114,6 +125,9 @@ public final class BridgeCore {
             } catch (Exception e) {
                 // Verbindung abgebrochen
             }
+            // Ab jetzt antwortet niemand mehr: offene und alle späteren Anfragen entscheidet die
+            // Engine (sonst wartete die nächste Anfrage ewig und die Aufgabe käme nie zum Zug)
+            disconnected = true;
             PENDING.values().forEach(f -> f.complete(JsonNull.INSTANCE));
             PENDING.clear();
             if (onClose != null) {
@@ -266,6 +280,8 @@ public final class BridgeCore {
             }
             case "debug_infinite_mana" -> DebugTools.setInfiniteMana(currentGame,
                     cmd.has("seat") ? cmd.get("seat").getAsInt() : 0, cmd.has("on") && cmd.get("on").getAsBoolean());
+            // Lage des Tisch-Fensters (Fensterübergabe im Gastgeber), siehe ClashBridge.tableWindow
+            case "window" -> tableWindow = cmd;
             case "quit" -> {
                 if (!embedded) {
                     System.exit(0);
@@ -399,9 +415,17 @@ public final class BridgeCore {
      * (oder JsonNull).
      */
     static JsonElement request(int player, JsonObject envelope) {
+        if (disconnected) {
+            return JsonNull.INSTANCE;
+        }
         int id = NEXT_ID.getAndIncrement();
         CompletableFuture<JsonElement> f = new CompletableFuture<>();
         PENDING.put(id, f);
+        if (disconnected) {
+            // gerade getrennt, nachdem die offenen Anfragen beendet wurden
+            PENDING.remove(id);
+            return JsonNull.INSTANCE;
+        }
         boolean priority = envelope.has("decision") && envelope.get("decision").isJsonObject()
                 && envelope.getAsJsonObject("decision").has("type")
                 && "Priority".equals(envelope.getAsJsonObject("decision").get("type").getAsString());

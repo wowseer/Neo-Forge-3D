@@ -9,6 +9,7 @@ import java.util.Set;
 
 import clash.forgebridge.ClashBridge;
 import clash.forgebridge.TableLauncher;
+import clash.forgebridge.TableWindow;
 import forge.LobbyPlayer;
 import forge.game.GameType;
 import forge.game.player.RegisteredPlayer;
@@ -152,6 +153,140 @@ public final class ClashTable {
      * spielt NeoForge wie gewohnt mit seinem eigenen Tisch).
      */
     public static TableLauncher.Session open() {
+        return open((TableWindow) null);
+    }
+
+    /**
+     * Fensterübergabe: startet den Tisch dort, wo das Fenster {@code over} ist (Lage, Größe,
+     * maximiert, Vollbild), und versteckt {@code over}, sobald der Tisch verbunden ist – es ist
+     * immer nur ein Fenster zu sehen. Nach der Partie {@link #close(TableLauncher.Session,
+     * javafx.stage.Stage)}. Ohne {@code over} wie {@link #open()}. Nicht im JavaFX-Faden aufrufen
+     * (wartet, bis der Tisch verbunden ist).
+     */
+    public static TableLauncher.Session open(javafx.stage.Stage over) {
+        if (over == null) {
+            return open();
+        }
+        TableWindow at = onFx(() -> over.isShowing() ? windowOf(over) : null);
+        TableLauncher.Session session = open(at);
+        if (session != null && at != null) {
+            onFx(() -> {
+                // Das Verstecken des einzigen Fensters beendete sonst JavaFX (wie beim Adventure)
+                implicitExit = javafx.application.Platform.isImplicitExit();
+                javafx.application.Platform.setImplicitExit(false);
+                over.hide();
+                return null;
+            });
+        }
+        return session;
+    }
+
+    /**
+     * Ende der Fensterübergabe: {@code over} kommt dorthin, wo das Tisch-Fenster zuletzt war
+     * (gleicher Modus: maximiert, Vollbild oder Lage und Größe), wird gezeigt – erst dann schließt
+     * der Tisch. Ohne {@code over} nur {@code session.close()}.
+     */
+    public static void close(TableLauncher.Session session, javafx.stage.Stage over) {
+        if (session == null) {
+            return;
+        }
+        if (over != null) {
+            TableWindow last = session.window();
+            System.out.println("[clash] Fensterübergabe zurück: " + (last == null ? "keine Lage gemeldet" : last));
+            onFx(() -> {
+                if (!over.isShowing()) {
+                    if (last != null) {
+                        applyTo(over, last);
+                    }
+                    over.show();
+                    javafx.application.Platform.setImplicitExit(implicitExit);
+                }
+                over.toFront();
+                over.requestFocus();
+                return null;
+            });
+        }
+        session.close();
+    }
+
+    /** Fenster, in dem {@code node} gerade zu sehen ist, oder {@code null} (aus jedem Faden). */
+    public static javafx.stage.Stage stageOf(javafx.scene.Node node) {
+        if (node == null) {
+            return null;
+        }
+        return onFx(() -> node.getScene() != null && node.getScene().getWindow() instanceof javafx.stage.Stage st
+                ? st : null);
+    }
+
+    /** Wert von {@code Platform.isImplicitExit()} vor dem Verstecken (siehe {@link #open(javafx.stage.Stage)}). */
+    private static volatile boolean implicitExit = true;
+
+    /**
+     * Lage des Inhaltsbereichs von {@code stage} in Bildschirmpixeln und ihr Modus (JavaFX-Faden).
+     * JavaFX rechnet in skalierten Einheiten und mit Rahmen; der Tisch in Pixeln ohne Rahmen.
+     */
+    public static TableWindow windowOf(javafx.stage.Stage stage) {
+        javafx.scene.Scene sc = stage.getScene();
+        double sx = stage.getOutputScaleX();
+        double sy = stage.getOutputScaleY();
+        TableWindow.Mode mode = stage.isFullScreen() ? TableWindow.Mode.FULLSCREEN
+                : stage.isMaximized() ? TableWindow.Mode.MAXIMIZED : TableWindow.Mode.WINDOWED;
+        return new TableWindow((int) Math.round((stage.getX() + sc.getX()) * sx),
+                (int) Math.round((stage.getY() + sc.getY()) * sy),
+                (int) Math.round(sc.getWidth() * sx), (int) Math.round(sc.getHeight() * sy), mode);
+    }
+
+    /** {@code stage} in Modus und Lage {@code w} bringen (JavaFX-Faden; Gegenstück zu {@link #windowOf}). */
+    public static void applyTo(javafx.stage.Stage stage, TableWindow w) {
+        switch (w.mode()) {
+            case FULLSCREEN -> stage.setFullScreen(true);
+            case MAXIMIZED -> {
+                stage.setFullScreen(false);
+                stage.setMaximized(true);
+            }
+            case WINDOWED -> {
+                stage.setFullScreen(false);
+                stage.setMaximized(false);
+                javafx.scene.Scene sc = stage.getScene();
+                double sx = stage.getOutputScaleX();
+                double sy = stage.getOutputScaleY();
+                // Rahmen und Titelleiste kennt JavaFX vom letzten Zeigen: Inhaltsbereich angleichen
+                double frameW = stage.getWidth() - sc.getWidth();
+                double frameH = stage.getHeight() - sc.getHeight();
+                stage.setX(w.x() / sx - sc.getX());
+                stage.setY(w.y() / sy - sc.getY());
+                stage.setWidth(w.width() / sx + frameW);
+                stage.setHeight(w.height() / sy + frameH);
+            }
+        }
+    }
+
+    /** {@code task} im JavaFX-Faden ausführen und auf das Ergebnis warten (auch aus ihm heraus). */
+    private static <T> T onFx(java.util.function.Supplier<T> task) {
+        if (javafx.application.Platform.isFxApplicationThread()) {
+            return task.get();
+        }
+        java.util.concurrent.CompletableFuture<T> f = new java.util.concurrent.CompletableFuture<>();
+        javafx.application.Platform.runLater(() -> {
+            try {
+                f.complete(task.get());
+            } catch (RuntimeException e) {
+                f.completeExceptionally(e);
+            }
+        });
+        try {
+            return f.get();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return null;
+        } catch (java.util.concurrent.ExecutionException e) {
+            System.err.println("[clash] Fensterübergabe: " + e.getCause());
+            return null;
+        }
+    }
+
+    /** Wie {@link #open()}, das Tisch-Fenster öffnet sich bei {@code window} ({@code null} = egal). */
+    public static TableLauncher.Session open(TableWindow window) {
         File log = new File(System.getProperty("java.io.tmpdir"), "neoforge-clash-godot.log");
         TableLauncher.Config config;
         File table = tableProgram();
@@ -167,6 +302,9 @@ public final class ClashTable {
             }
             TableLauncher.Config godot = new TableLauncher.Config(godotProgram(), project);
             config = new TableLauncher.Config(godot.program(), godot.arguments(), godot.timeoutMs(), log);
+        }
+        if (window != null) {
+            config = config.withWindow(window);
         }
         try {
             TableLauncher.Session session = TableLauncher.launch(config);
@@ -196,6 +334,15 @@ public final class ClashTable {
      */
     public static TableLauncher.Session openForDuel(List<RegisteredPlayer> players, RegisteredPlayer human,
             GameType gameType, Collection<GameType> variants) {
+        return openForDuel(players, human, gameType, variants, null);
+    }
+
+    /**
+     * Wie {@link #openForDuel(List, RegisteredPlayer, GameType, Collection)}; das Tisch-Fenster
+     * öffnet sich bei {@code window} (Fensterübergabe; {@code null} = egal).
+     */
+    public static TableLauncher.Session openForDuel(List<RegisteredPlayer> players, RegisteredPlayer human,
+            GameType gameType, Collection<GameType> variants, TableWindow window) {
         Set<GameType> all = EnumSet.of(gameType);
         if (variants != null) {
             all.addAll(variants);
@@ -203,7 +350,7 @@ public final class ClashTable {
         if (!players.contains(human) || !useFor(players.size() - 1, false, all)) {
             return null;
         }
-        TableLauncher.Session session = open();
+        TableLauncher.Session session = open(window);
         if (session == null) {
             return null;
         }

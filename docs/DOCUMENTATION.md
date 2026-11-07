@@ -429,8 +429,12 @@ NeoForge setting → environment variable (`NEOFORGE_CLASH`, `CLASH_GODOT`, `CLA
 Godot does not start within 2 minutes, NeoForge plays with its own table as usual. While the match
 runs, NeoForge's window says "The game is running in the 3D table window."
 
-**Flow:** start a match in NeoForge → the Godot window opens with the match → the end of the game
-is shown for 4 s, then Godot closes and NeoForge shows the result. If the Godot window is closed
+**Flow:** start a match in NeoForge → the table opens exactly where NeoForge's window is (same
+position and size, maximised or full screen like it) and NeoForge's window disappears once the
+table is connected – only one window is ever visible (window handoff; in the Adventure the
+Adventure window hands over directly, NeoForge's 2D duel window does not appear) → the end of the
+game is shown for 4 s → NeoForge reappears where the table window was last (moved, resized,
+maximised …), then the table closes and NeoForge shows the result. If the Godot window is closed
 in the middle of the match, the player's seat concedes.
 
 **Developing and testing without Maven:** NeoForge's sources only build in a Forge checkout with
