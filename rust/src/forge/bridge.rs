@@ -202,6 +202,11 @@ impl ForgeBridge {
     #[signal]
     fn game_over(result: VarDictionary);
 
+    /// Aussehen eines Sitzplatzes vom Gastgeber (eingebettet, z. B. NeoForges „Anpassen“):
+    /// `{seat, portrait, sleeve}` mit Pfaden zu Bilddateien (fehlend = eigenes Aussehen).
+    #[signal]
+    fn look_received(look: VarDictionary);
+
     /// Fehler der Brücke oder beim Start (`code` z. B. "deck_not_found", "spawn_failed").
     #[signal]
     fn bridge_error(code: GString, message: GString);
@@ -414,6 +419,7 @@ impl ForgeBridge {
             "match_started" => self.signals().match_started().emit(&sub("state")),
             "state" => self.signals().state_received().emit(&sub("state")),
             "game_over" => self.signals().game_over().emit(&dict),
+            "look" => self.signals().look_received().emit(&dict),
             "card_info" => {
                 let cards = msg.get("cards").map(json::to_variant).and_then(|v| v.try_to::<VarArray>().ok()).unwrap_or_default();
                 self.signals().card_info_received().emit(&cards);

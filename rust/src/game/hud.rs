@@ -24,7 +24,7 @@ use godot::classes::control::{GrowDirection, MouseFilter};
 use godot::classes::text_server::AutowrapMode;
 use godot::classes::{
     Button, CanvasLayer, Control, ICanvasLayer, InputEvent, InputEventKey, Label, PanelContainer, RichTextLabel,
-    StyleBoxFlat, VBoxContainer,
+    StyleBoxFlat, Texture2D, VBoxContainer,
 };
 use godot::builtin::Side;
 use godot::global::Key;
@@ -549,6 +549,7 @@ impl TurnHud {
             if let Some(b) = badge {
                 let mut b = b.bind_mut();
                 b.set_state(view.names[seat].clone(), view.lives[seat], seat as i64 == active);
+                b.set_portrait_texture(view.portraits[seat].clone());
                 if b.is_targetable() != view.targetable_seats[seat] {
                     b.set_targetable(view.targetable_seats[seat]);
                 }
@@ -691,6 +692,8 @@ pub struct HudView {
     pub targetable_seats: [bool; 2],
     /// Ist Sitzplatz 0 / 1 als Ziel gewählt?
     pub selected_seats: [bool; 2],
+    /// Porträt je Sitzplatz vom Gastgeber (z. B. NeoForges „Anpassen“); None = gezeichnete Figur.
+    pub portraits: [Option<Gd<Texture2D>>; 2],
 }
 
 pub(super) fn styled_button(font_size: i32) -> Gd<Button> {

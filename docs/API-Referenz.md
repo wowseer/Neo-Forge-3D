@@ -96,6 +96,7 @@ Verbindung zur Forge-Regel-Engine: startet die Java-Brücke (`forge-bridge/`) al
 | `debug_card_names_received(names: PackedStringArray)` | Antwort auf `debug_request_card_names()`: alle Kartennamen der Kartendatenbank, sortiert (Debug-Fenster). |
 | `card_info_received(cards: VarArray)` | Antwort auf `request_card_info()`: Kartendaten (`{name, type, cost, text, power, toughness, image}`) je bekanntem Namen. |
 | `game_over(result: Dictionary)` | Die Partie ist vorbei: `{winner, draw, reason}`. |
+| `look_received(look: Dictionary)` | Aussehen eines Sitzplatzes vom Gastgeber (eingebettet, z. B. NeoForges „Anpassen“): `{seat, portrait, sleeve}` mit Pfaden zu Bilddateien (fehlend = eigenes Aussehen). |
 | `bridge_error(code: String, message: String)` | Fehler der Brücke oder beim Start (`code` z. B. "deck_not_found", "spawn_failed"). |
 | `bridge_stopped(exit_code: int)` | Der Java-Prozess ist beendet (`exit_code` -1 = unbekannt / von uns beendet). |
 
@@ -165,6 +166,7 @@ Spielt eine Partie mit der Forge-Regel-Engine auf dem 3D-Tisch: Karten, Zonen, K
 | `on_game_over(result: Dictionary)` | `void` | Partie vorbei: Sieger merken (HUD zeigt ihn an). |
 | `on_bridge_error(code: String, message: String)` | `void` | Fehler der Brücke: als Warnung in die Godot-Konsole schreiben. |
 | `on_card_clicked(card: Card3D)` | `void` | Karte angeklickt: bei der Zielwahl = Ziel wählen/abwählen; mit Priorität = Aktion der Karte (nicht aus der Hand – die spielt man durch Ziehen): eine Aktion sofort, mehrere über das Fähigkeiten-Menü. |
+| `on_look(look: Dictionary)` | `void` | Aussehen eines Sitzplatzes vom Gastgeber (NeoForge: Gesicht und Kartenhülle aus „Anpassen“): das Porträt kommt ins Medaillon, die Hülle auf die Rückseite jeder Karte des Sitzplatzes (auch der schon liegenden). |
 | `on_card_info(cards: VarArray)` | `void` | Antwort auf `card_info`: Kartendaten merken; die Vorschau der Suche neu aufbauen, wenn sich bei ihrer Karte etwas Sichtbares ändert (z. B. das Bild kam). |
 | `on_search_selected(row: int)` | `void` | Zeile `row` der Suchliste gewählt: „Fertig“ wird anklickbar. |
 | `on_search_confirmed(row: int)` | `void` | Zweiter Klick auf die gewählte Zeile: bestätigen. |

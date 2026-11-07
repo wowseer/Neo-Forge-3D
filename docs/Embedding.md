@@ -150,6 +150,9 @@ table.close();
   window while it runs (`session.window()` / `ClashBridge.tableWindow()`), so after the match you
   can put your window there, show it, and then call `session.close()`. NeoForge's version:
   `ClashTable.open(Stage)` / `ClashTable.close(Session, Stage)`.
+- **Look:** `ClashBridge.sendLook(seat, portraitFile, sleeveFile)` gives a seat its own portrait
+  (medallion) and card sleeve (backs of its cards) – image files, absolute paths. NeoForge's
+  version: `ClashTable.sendLook(players)` (faces and sleeves from *Customise*).
 - Once the table is gone, the bridge answers no request any more – the engine decides for the
   remote seats (and they concede, see above).
 - Your own transport instead of `TableLauncher`: `ClashBridge.attach(outputStream, inputStream, onClose)`.

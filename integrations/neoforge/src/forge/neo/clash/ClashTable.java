@@ -360,6 +360,76 @@ public final class ClashTable {
         return session;
     }
 
+    /** Zufall für die Gesichter der Gegner. */
+    private static final java.util.Random RANDOM = new java.util.Random();
+
+    /**
+     * Aussehen aus „Anpassen“ an den Tisch schicken ({@link ClashBridge#sendLook}): Der vom Tisch
+     * gespielte Sitz bekommt dein Gesicht und deine Kartenhülle (die des Decks, sonst die aus
+     * „Anpassen“, {@code NeoLook.sleeveInPlay()} – wie NeoForges eigener Tisch), jeder Gegner ein
+     * zufälliges Gesicht aus Forges Avataren und seine Hülle (aus „Anpassen → Rivalen“, sonst die,
+     * die ihm die Engine gibt). Bilder aus Forges Sprite-Bögen werden als PNG in den Temp-Ordner
+     * geschrieben. Nach dem Aufstellen der Spieler aufrufen (Sitzplatz = Index in {@code players}).
+     */
+    public static void sendLook(List<RegisteredPlayer> players) {
+        File dir = new File(System.getProperty("java.io.tmpdir"), "neoforge-clash-look");
+        // Bilder der vorigen Partie weg (immer nur eine Partie am Tisch)
+        File[] old = dir.listFiles();
+        if (old != null) {
+            for (File f : old) {
+                f.delete();
+            }
+        }
+        dir.mkdirs();
+        long stamp = System.currentTimeMillis();
+        for (int seat = 0; seat < players.size(); seat++) {
+            LobbyPlayer lp = players.get(seat).getPlayer();
+            try {
+                forge.neo.look.LookItem face;
+                forge.neo.look.LookItem sleeve;
+                if (ClashBridge.isRemote(lp)) {
+                    face = forge.neo.look.NeoLook.currentAvatar();
+                    sleeve = forge.neo.look.NeoLook.sleeveInPlay();
+                } else {
+                    int faces = forge.neo.look.NeoLook.builtInAvatarCount();
+                    face = faces > 0 ? forge.neo.look.NeoLook.builtInAvatar(RANDOM.nextInt(faces)) : null;
+                    String custom = forge.neo.look.NeoPlayers.customSleeveOf(lp.getName());
+                    forge.neo.look.LookItem own = custom == null ? null : forge.neo.look.NeoLook.sleeveById(custom);
+                    sleeve = own != null ? own : forge.neo.look.NeoLook.builtInSleeve(lp.getSleeveIndex());
+                }
+                String facePath = lookFile(face, dir, "face-" + seat + "-" + stamp);
+                String sleevePath = lookFile(sleeve, dir, "sleeve-" + seat + "-" + stamp);
+                System.out.println("[clash] Aussehen Sitz " + seat + ": Gesicht " + facePath + ", Hülle " + sleevePath);
+                ClashBridge.sendLook(seat, facePath, sleevePath);
+            } catch (RuntimeException e) {
+                // ohne Gesicht und Hülle spielt es sich genauso
+                System.err.println("[clash] Aussehen für Sitz " + seat + " nicht verfügbar: " + e);
+            }
+        }
+    }
+
+    /** Bilddatei zu {@code item}: eigene Datei direkt, Sprite als PNG nach {@code dir}; sonst {@code null}. */
+    private static String lookFile(forge.neo.look.LookItem item, File dir, String name) {
+        if (item == null || item.isNone()) {
+            return null;
+        }
+        if (item.getFile() != null && item.getFile().isFile()) {
+            return item.getFile().getAbsolutePath();
+        }
+        javafx.scene.image.Image image = item.image();
+        if (image == null) {
+            return null;
+        }
+        File f = new File(dir, name + ".png");
+        try {
+            forge.neo.Snapshots.writePng(image, f);
+            return f.getAbsolutePath();
+        } catch (IOException e) {
+            System.err.println("[clash] Bild nicht geschrieben (" + f + "): " + e.getMessage());
+            return null;
+        }
+    }
+
     /**
      * Lobby-Spieler für den menschlichen Sitz: vom Tisch gesteuert, Sitzplatz-Index {@code seat}
      * (Reihenfolge der Spieler in der Partie).

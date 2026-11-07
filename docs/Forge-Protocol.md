@@ -252,6 +252,7 @@ JSON Lines, UTF-8: exactly one JSON message per line.
 | `state` | `state` |
 | `card_info` | `cards` |
 | `game_over` | `winner` (name or null), `draw`, `reason` |
+| `look` | embedded only, sent by the host (`ClashBridge.sendLook`): `seat`, `portrait` (image file for the seat's medallion), `sleeve` (image file for the backs of the seat's cards); absolute paths to PNG/JPG, a missing field keeps the table's own look. NeoForge sends your face and card sleeve from *Customise* (the deck's sleeve, otherwise yours) for your seat and a random face plus the rival's sleeve for the opponent. Godot signal `ForgeBridge.look_received`; also applied in the middle of a match (cards already on the table get the new back) |
 | `debug_card_names` | `names`: all card names of the card database, sorted |
 | `chat` | `from`, `text` |
 | `error` | `code` (`init_failed`, `bad_command`, `unknown_command`, `deck_not_found`, `match_running`, `no_match`, `unknown_request`, `game_crashed`, `unknown_card`, `bad_seat`, `debug_failed`), `message` |

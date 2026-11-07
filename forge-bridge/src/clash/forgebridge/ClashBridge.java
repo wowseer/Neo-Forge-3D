@@ -82,6 +82,16 @@ public final class ClashBridge {
         return w == null ? null : TableWindow.fromJson(w);
     }
 
+    /**
+     * Aussehen eines Sitzplatzes an den Tisch schicken (Nachricht {@code look}): Porträt für sein
+     * Medaillon und Kartenhülle für die Rückseiten seiner Karten, je als Bilddatei (PNG/JPG,
+     * absoluter Pfad; {@code null} = der Tisch nimmt seine eigene). Eingebettet, am besten gleich
+     * nach dem Verbinden; der Tisch übernimmt es auch mitten in der Partie.
+     */
+    public static void sendLook(int seat, String portrait, String sleeve) {
+        BridgeCore.sendLook(seat, portrait, sleeve);
+    }
+
     /** Läuft die Brücke eingebettet ({@link #attach})? */
     public static boolean isEmbedded() {
         return BridgeCore.isEmbedded();

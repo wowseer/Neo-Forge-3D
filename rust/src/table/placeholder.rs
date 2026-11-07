@@ -307,9 +307,34 @@ fn face_down_face(def: &CardDef) -> Gd<Texture2D> {
     finish(img)
 }
 
-/// Gemeinsame Rückseite.
+/// Gemeinsame Rückseite (einmal erzeugt, von allen Karten geteilt).
 pub fn card_back() -> Gd<Texture2D> {
-    finish(back_image())
+    super::shared::texture("card_back", || finish(back_image()))
+}
+
+/// Kartenhülle aus einer Bilddatei (z. B. aus NeoForges „Anpassen“): auf das Format der
+/// Kartentextur gebracht, als Rückseite. `None`, wenn die Datei nicht lesbar ist.
+pub fn sleeve_from_file(path: &str) -> Option<Gd<Texture2D>> {
+    let mut img = Image::load_from_file(path)?;
+    img.convert(Format::RGBA8);
+    img.resize_ex(W, H).interpolation(godot::classes::image::Interpolation::LANCZOS).done();
+    Some(finish(img))
+}
+
+/// Porträt aus einer Bilddatei für ein Medaillon: mittig quadratisch zugeschnitten, höchstens
+/// 256 Pixel (eigene Fotos können riesig sein). `None`, wenn die Datei nicht lesbar ist.
+pub fn portrait_from_file(path: &str) -> Option<Gd<Texture2D>> {
+    let img = Image::load_from_file(path)?;
+    let (w, h) = (img.get_width(), img.get_height());
+    let side = w.min(h);
+    if side <= 0 {
+        return None;
+    }
+    let mut sq = img.get_region(rect((w - side) / 2, (h - side) / 2, side, side))?;
+    sq.convert(Format::RGBA8);
+    let size = side.min(256);
+    sq.resize_ex(size, size).interpolation(godot::classes::image::Interpolation::LANCZOS).done();
+    Some(finish(sq))
 }
 
 fn back_image() -> Gd<Image> {

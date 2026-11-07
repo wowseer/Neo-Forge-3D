@@ -31,10 +31,10 @@ index 53d5f0c..8428db5 100644
                  banner("PHASE 2 - JavaFX interface");
                  // Los textos del motor, antes de construir NeoApp: hay campos
 diff --git a/forge-gui-neo/src/main/java/forge/neo/adventure/NeoDuelBridge.java b/forge-gui-neo/src/main/java/forge/neo/adventure/NeoDuelBridge.java
-index 9f82385..3a3a4a6 100644
+index 9f82385..299693a 100644
 --- a/forge-gui-neo/src/main/java/forge/neo/adventure/NeoDuelBridge.java
 +++ b/forge-gui-neo/src/main/java/forge/neo/adventure/NeoDuelBridge.java
-@@ -76,56 +76,112 @@ public final class NeoDuelBridge {
+@@ -76,56 +76,114 @@ public final class NeoDuelBridge {
          };
          NeoWindow.takeOver();
  
@@ -132,6 +132,8 @@ index 9f82385..3a3a4a6 100644
 +                match.setStartGameHook(SafeAi.hook(match, null));
 +                snapshotLater(gui); // antes: startMatch no vuelve hasta que acaba el duelo
 +                if (table3d != null) {
++                    // Neo Forge 3D: Gesicht und Kartenhuelle aus Anpassen an den 3D-Tisch
++                    forge.neo.clash.ClashTable.sendLook(players);
 +                    // Neo Forge 3D: kein Mensch in der Partie, HostedMatch holt sich die
 +                    // Zuschauer-Oberflaeche von der Plattform (wie NeoGame mit dem 3D-Tisch).
 +                    forge.neo.platform.NeoGuiBase.setGuiGameFactory(() -> gui);
@@ -855,7 +857,7 @@ index 9575e8c..ae327a8 100644
      public forge.deck.CardPool autoBuild(final List<forge.item.PaperCard> cards) {
          return LimitedAutoBuild.build(cards, null);
 diff --git a/forge-gui-neo/src/main/java/forge/neo/match/NeoGame.java b/forge-gui-neo/src/main/java/forge/neo/match/NeoGame.java
-index 4d3fc9a..68cc6df 100644
+index 4d3fc9a..df8ff3c 100644
 --- a/forge-gui-neo/src/main/java/forge/neo/match/NeoGame.java
 +++ b/forge-gui-neo/src/main/java/forge/neo/match/NeoGame.java
 @@ -344,7 +344,23 @@ public final class NeoGame {
@@ -904,7 +906,18 @@ index 4d3fc9a..68cc6df 100644
              players.add(humanSeat);
          }
  
-@@ -478,7 +499,7 @@ public final class NeoGame {
+@@ -420,6 +441,10 @@ public final class NeoGame {
+         }
+ 
+         match.setOnMatchOver(over::countDown);
++        if (table3d != null) {
++            // Neo Forge 3D: Gesicht und Kartenhuelle aus Anpassen an den 3D-Tisch
++            forge.neo.clash.ClashTable.sendLook(players);
++        }
+ 
+         // El blindaje de la IA va SIEMPRE, no solo cuando hay algo mas que
+         // hacer al empezar. Aqui el match se construye a mano (no sale de
+@@ -478,7 +503,7 @@ public final class NeoGame {
          // FModel.getPreferences() y nadie la habria vuelto a mirar.
          applyNeoRules(rules);
  
@@ -913,7 +926,7 @@ index 4d3fc9a..68cc6df 100644
              // Sin jugadores humanos, HostedMatch.startGame() registra el
              // espectador el solo pidiendo una GUI a IGuiBase. Solo hay que
              // decirle cual devolver.
-@@ -515,6 +536,9 @@ public final class NeoGame {
+@@ -515,6 +540,9 @@ public final class NeoGame {
                      timeoutSecs, turns);
          }
  

@@ -86,6 +86,13 @@ Each value is taken from the first source that has it:
 
 If the table does not connect within 2 minutes, NeoForge plays with its own table.
 
+**Look from *Customise*:** your seat shows your face from *Customise* in its medallion and your
+card sleeve on the backs of your cards (the deck's sleeve if it has one, as on NeoForge's own
+table); the opponent gets a random face from Forge's avatars and the sleeve NeoForge gives that
+rival (*Customise → Rivals*, otherwise the engine's). `ClashTable.sendLook`, called by `NeoGame`
+and `NeoDuelBridge` once the seats are set; images from Forge's sprite sheets are written as PNG to
+`<tmp>/neoforge-clash-look/`.
+
 **Window handoff:** the table opens where NeoForge's window is (`ClashTable.open(Stage)`, also
 maximised or full screen) and NeoForge hides its window once the table is connected; after the
 match NeoForge comes back where the table window was last (`ClashTable.close(Session, Stage)`,

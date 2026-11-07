@@ -100,6 +100,19 @@ public final class BridgeCore {
         System.exit(0);
     }
 
+    /** Nachricht {@code look}: Porträt und Kartenhülle des Sitzplatzes {@code seat} (Dateipfade). */
+    public static void sendLook(int seat, String portrait, String sleeve) {
+        JsonObject m = message("look");
+        m.addProperty("seat", seat);
+        if (portrait != null && !portrait.isBlank()) {
+            m.addProperty("portrait", portrait);
+        }
+        if (sleeve != null && !sleeve.isBlank()) {
+            m.addProperty("sleeve", sleeve);
+        }
+        send(m);
+    }
+
     /** Zuletzt vom Tisch gemeldete Fensterlage (Befehl {@code window}) oder {@code null}. */
     public static JsonObject tableWindow() {
         return tableWindow;

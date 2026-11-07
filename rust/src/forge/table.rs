@@ -37,6 +37,7 @@ use crate::table::card3d::{Card3D, CardMarker, CARD_HEIGHT, CARD_WIDTH, LUNGE_HO
 use crate::table::card_inspector::{CardInspector, InspectorEntry};
 use crate::table::fx::{mana_color, ManaFx};
 use godot::classes::Label3D;
+use godot::classes::Texture2D;
 use crate::table::target_arrows::{ArrowColor, ArrowSpec, TargetArrows, LOOP_DISTANCE};
 use crate::table::placeholder;
 use crate::table::table_controller::TableController;
@@ -247,6 +248,10 @@ pub struct ForgeTable {
     since_refresh: f64,
     winner: String,
     match_running: bool,
+    /// Aussehen je Sitzplatz vom Gastgeber (Nachricht `look`): Porträt fürs Medaillon und
+    /// Kartenhülle für die Rückseiten; None = eigenes.
+    seat_portraits: [Option<Gd<Texture2D>>; 2],
+    seat_backs: [Option<Gd<Texture2D>>; 2],
 
     base: Base<Node>,
 }
@@ -331,6 +336,8 @@ impl INode for ForgeTable {
             since_refresh: 0.0,
             winner: String::new(),
             match_running: false,
+            seat_portraits: [None, None],
+            seat_backs: [None, None],
             base,
         }
     }
@@ -348,6 +355,7 @@ impl INode for ForgeTable {
             bridge.connect("game_over", &cb("on_game_over"));
             bridge.connect("bridge_error", &cb("on_bridge_error"));
             bridge.connect("card_info_received", &cb("on_card_info"));
+            bridge.connect("look_received", &cb("on_look"));
             // Debug-Fenster (F10), nur in Debug-Builds
             if Os::singleton().is_debug_build() {
                 let mut panel = DebugPanel::new_alloc();
@@ -1929,6 +1937,33 @@ impl ForgeTable {
         }
     }
 
+    /// Aussehen eines Sitzplatzes vom Gastgeber (NeoForge: Gesicht und Kartenhülle aus
+    /// „Anpassen“): das Porträt kommt ins Medaillon, die Hülle auf die Rückseite jeder Karte des
+    /// Sitzplatzes (auch der schon liegenden).
+    #[func]
+    fn on_look(&mut self, look: VarDictionary) {
+        let Ok(seat) = usize::try_from(get_int(&look, "seat")) else { return };
+        if seat > 1 {
+            return;
+        }
+        let portrait = get_str(&look, "portrait");
+        if !portrait.is_empty() {
+            self.seat_portraits[seat] = placeholder::portrait_from_file(&portrait);
+        }
+        let sleeve = get_str(&look, "sleeve");
+        if !sleeve.is_empty() {
+            if let Some(back) = placeholder::sleeve_from_file(&sleeve) {
+                self.seat_backs[seat] = Some(back.clone());
+                let mine = self.cards.values().chain(self.deck_cards[seat].iter());
+                for mut c in mine.filter(|c| c.is_instance_valid()).cloned().collect::<Vec<_>>() {
+                    if c.bind().owner_seat == seat as i64 {
+                        c.bind_mut().set_back_texture(Some(back.clone()));
+                    }
+                }
+            }
+        }
+    }
+
     /// Antwort auf `card_info`: Kartendaten merken; die Vorschau der Suche neu aufbauen, wenn
     /// sich bei ihrer Karte etwas Sichtbares ändert (z. B. das Bild kam).
     #[func]
@@ -3351,13 +3386,14 @@ impl ForgeTable {
         let (c, size) = (SCRY_FRAME_CENTER, SCRY_FRAME_SIZE);
         // verdeckter Bibliotheksstapel in der Kastenmitte (leicht versetzte Rückseiten)
         let library = self.deck_cards.get(*player as usize).map_or(0, |d| d.len());
+        let back = self.back_of(*player as usize);
         let face_down = Basis::from_axis_angle(Vector3::RIGHT, std::f32::consts::FRAC_PI_2)
             * Basis::from_axis_angle(Vector3::BACK, std::f32::consts::PI);
         for i in 0..library.min(SCRY_PILE_SHOWN) {
             let mut card = Card3D::new_alloc();
             {
                 let mut b = card.bind_mut();
-                b.set_back_texture(Some(placeholder::card_back()));
+                b.set_back_texture(Some(back.clone()));
                 let hidden = CardDef::named("?");
                 b.set_face_texture(Some(placeholder::card_face(&hidden)));
                 b.apply_def(&hidden);
@@ -3851,6 +3887,7 @@ impl ForgeTable {
             choice,
             targetable_seats: seat_state(false),
             selected_seats: seat_state(true),
+            portraits: self.seat_portraits.clone(),
         }
     }
 
@@ -5428,13 +5465,19 @@ impl ForgeTable {
         }
     }
 
+    /// Kartenrückseite des Sitzplatzes `seat`: seine Hülle vom Gastgeber, sonst die eigene.
+    fn back_of(&self, seat: usize) -> Gd<Texture2D> {
+        self.seat_backs.get(seat).cloned().flatten().unwrap_or_else(placeholder::card_back)
+    }
+
     /// Neue Karte über dem Deck ihres Besitzers erzeugen (gleitet dann in die Zielzone).
     fn spawn_card(&mut self, seat: usize) -> Gd<Card3D> {
+        let back = self.back_of(seat);
         let mut card = Card3D::new_alloc();
         {
             let mut c = card.bind_mut();
             c.owner_seat = seat as i64;
-            c.set_back_texture(Some(placeholder::card_back()));
+            c.set_back_texture(Some(back));
             let hidden = CardDef::named("?");
             c.set_face_texture(Some(placeholder::card_face(&hidden)));
             c.apply_def(&hidden);

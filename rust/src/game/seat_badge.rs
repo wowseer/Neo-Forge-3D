@@ -219,6 +219,13 @@ impl SeatBadge {
         self.base_mut().set_mouse_filter(if value { MouseFilter::STOP } else { MouseFilter::IGNORE });
     }
 
+    /// Setzt das Porträt (None = gezeichnete Figur); nur bei Änderung.
+    pub fn set_portrait_texture(&mut self, tex: Option<Gd<Texture2D>>) {
+        if self.portrait != tex {
+            self.portrait = tex;
+        }
+    }
+
     /// Setzt Name, Lebenspunkte und „am Zug“ auf einmal. Weicht `life` vom bisherigen Wert ab,
     /// blitzt die Plakette kurz auf (rot bei Schaden, grün bei Heilung).
     #[func]
