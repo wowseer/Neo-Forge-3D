@@ -409,7 +409,8 @@ Planechase, Archenemy and Vanguard stay on NeoForge's own table (`ClashTable.use
 
 **Building and starting:** `tools/neoforge_build.sh` builds NeoForge from source with the 3D table
 (NeoForge repository + Forge checkout as in NeoForge's `BUILDING.md`, Maven, Java 17+),
-`tools/neoforge_play.sh` starts it with the paths to Godot and this project already set. Details:
+`tools/neoforge_play.sh` starts it with the paths to Godot and this project already set,
+`tools/neoforge_menu.sh` puts it into the application menu. Details:
 `integrations/neoforge/README.md`.
 
 **Enabling:** in NeoForge under *Settings → Table → 3D table (Neo Forge 3D)*: "Play 1 vs 1 games

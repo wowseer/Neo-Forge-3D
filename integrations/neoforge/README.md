@@ -32,7 +32,13 @@ Forge's `pom.xml`). With that in place:
 NEOFORGE=~/OProgrammieren/Java/NeoForge FORGE_SRC=~/OProgrammieren/Java/forge \
   tools/neoforge_build.sh     # patch (once), copy bridge + ClashTable, copy the module, Maven
 tools/neoforge_play.sh        # start NeoForge (data in ~/.local/share/NeoForge)
+tools/neoforge_menu.sh        # optional: "Neo Forge" in the application menu, .frp replays open with it
 ```
+
+Do not use NeoForge's own `linux/add-to-menu.sh` for a source build: it belongs to the packaged
+itch.io version and points the menu entry to `bin/NeoForge`, which does not exist in the source
+tree (the entry then starts nothing). `neoforge_menu.sh` writes the same entry, started through
+`neoforge_play.sh`.
 
 `neoforge_build.sh` applies `neoforge-host.patch` if the NeoForge repository does not have it yet,
 runs `tools/sync_neoforge.sh`, copies `forge-gui-neo` into the Forge checkout and builds with

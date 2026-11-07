@@ -186,7 +186,8 @@ Deckauswahl und Formate übernimmt NeoForge.
 | NeoForge-Klassen geändert (im NeoForge-Repo, lokal committet) | `tools/neoforge_export_patch.sh` → `integrations/neoforge/neoforge-host.patch` neu (Änderungen an NeoForge immer dort festhalten) |
 | Crates ohne Godot testen | `cd rust && cargo test -p clash-protocol -p clash-forge-client`; Beispiel `cargo run -p clash-forge-client --example autoplay -- <forge> <bridge.jar> <deck1> <deck2>` |
 | NeoForge mit 3D-Tisch bauen (Maven) | `tools/neoforge_build.sh` (Patch, Sync, Modul in den Forge-Checkout, `mvn package`) |
-| NeoForge mit 3D-Tisch spielen | `tools/neoforge_play.sh` (Daten in `~/.local/share/NeoForge`; Testbefehl: `NEOFORGE_CMD=clash`, Godot ohne Fenster über `CLASH_GODOT=<Hülle mit --headless>`) |
+| NeoForge mit 3D-Tisch spielen | `tools/neoforge_play.sh` (Daten in `~/.local/share/NeoForge`, Log `neo/neo.log` dort; Testbefehl: `NEOFORGE_CMD=clash`, Godot ohne Fenster über `CLASH_GODOT=<Hülle mit --headless>`) |
+| NeoForge ins Anwendungsmenü | `tools/neoforge_menu.sh` (nie NeoForges `linux/add-to-menu.sh` aus dem Quellcode: zeigt auf ein nicht vorhandenes `bin/NeoForge`) |
 | NeoForge-Patch bauen (ohne Maven) | `tools/neoforge_patch.sh` → `forge-bridge/build/neoforge/neoforge-clash-patch.jar` |
 | NeoForge-Partie mit 3D-Tisch | `tools/neoforge_clash.sh [--deck=NAME] [--timeout=SEK]` (Testkopie der Installation, eigene Spielstände bleiben unberührt) |
 | Godot | `godot` (`/usr/bin/godot`, 4.7.2 aus dem System, im PATH) |
