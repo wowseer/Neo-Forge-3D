@@ -4,6 +4,7 @@ pub mod button3d;
 pub mod exile_portal;
 pub mod fx;
 pub mod frame_pacer;
+pub mod graphics;
 mod button_shader;
 mod shader_noise;
 pub mod card3d;

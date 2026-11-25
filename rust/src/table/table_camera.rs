@@ -188,7 +188,9 @@ impl TableCamera {
     /// `SubViewport` (gleiche Welt, gleiche Bildeinstellungen wie das Hauptbild) und einer
     /// Kamera, die alles außer der Kulisse zeichnet. Die Ebene lässt Mausklicks durch.
     fn build_foreground(&mut self) {
-        let Some(root) = self.base().get_viewport() else { return };
+        let Some(mut root) = self.base().get_viewport() else { return };
+        // Grafikstufe zuerst: die Vordergrund-Ebene übernimmt die Einstellungen des Hauptbilds
+        super::graphics::apply_to_root(&mut root);
         self.base_mut().set_cull_mask(BACKGROUND_VISUAL_LAYER);
 
         let mut layer = CanvasLayer::new_alloc();
@@ -215,6 +217,10 @@ impl TableCamera {
         vp.set_positional_shadow_atlas_size(root.get_positional_shadow_atlas_size());
         let mut cam = Camera3D::new_alloc();
         cam.set_cull_mask(ALL_VISUAL_LAYERS & !BACKGROUND_VISUAL_LAYER);
+        // eigene, sparsamere Umgebung (ohne SSAO) statt der des Hauptbilds
+        if let Some(env) = self.base().get_environment().or_else(|| super::graphics::world_environment(&root)) {
+            cam.set_environment(&super::graphics::foreground_environment(&env));
+        }
         vp.add_child(&cam);
         container.add_child(&vp);
         layer.add_child(&container);
@@ -236,6 +242,5 @@ impl TableCamera {
         cam.set_h_offset(me.get_h_offset());
         cam.set_v_offset(me.get_v_offset());
         cam.set_keep_aspect_mode(me.get_keep_aspect_mode());
-        cam.set_environment(me.get_environment().as_ref());
     }
 }

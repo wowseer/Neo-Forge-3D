@@ -52,6 +52,14 @@ The game is meant to stay light on CPU, GPU and battery:
   canvas items) and the phase timeline (only the current, pulsing station). Many filled shapes
   are drawn as one triangle array (`game/tri_batch.rs`) – Godot creates GPU buffers for every
   single `draw_polygon`/`draw_circle`.
+- **Graphics level (`table/graphics.rs`).** The table picks its effects by GPU: on a discrete
+  graphics card everything (SSAO, glow, full 3D resolution); on integrated GPUs (notebooks,
+  Steam Deck …) without SSAO and glow and with the 3D scene at 75 % resolution (bilinear; the 2D
+  displays stay sharp). Override with `-- --graphics=high|low` or `CLASH_GRAPHICS=high|low`; the
+  choice is printed at start ("Grafikstufe: …"). The foreground layer (cards, hand, stages) always
+  renders without SSAO – it cost almost as much as the whole main image, and flat cards hardly show
+  it. Measured at 1920×1080 on an Intel UHD Graphics (CML GT2), GPU time per frame of both 3D
+  layers: before 76 ms (13 fps), high 70 ms, low 27 ms (35 fps).
 - **Shared resources.** Shaders with the same code and generated images (tap symbol) exist only
   once (`table/shared.rs`), not once per card, button or effect – no shader compiling when new
   cards or effects appear.
