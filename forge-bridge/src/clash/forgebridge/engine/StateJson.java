@@ -39,6 +39,13 @@ final class StateJson {
             po.addProperty("name", p.getName());
             po.addProperty("life", p.getLife());
             po.addProperty("library", p.getCardsIn(ZoneType.Library).size());
+            // oberste Karte der Bibliothek, wenn der Betrachter sie sehen darf (Mystic Forge, Future
+            // Sight, Courser of Kruphix, Vizier of the Menagerie, Bolas's Citadel …: Forges
+            // MayLookAt bzw. aufgedeckt): die UI zeigt sie offen neben der Hand
+            Card top = libraryTopVisibleTo(game, p, viewer);
+            if (top != null) {
+                po.add("library_top", card(top));
+            }
             po.addProperty("hand_count", p.getCardsIn(ZoneType.Hand).size());
             // Manapool: Menge je Farbe in der Reihenfolge W U B R G C
             JsonArray pool = new JsonArray();
@@ -79,6 +86,24 @@ final class StateJson {
         s.add("combat", combat(game));
         s.add("stack", stack(game));
         return s;
+    }
+
+    /**
+     * Oberste Karte der Bibliothek von {@code owner}, wenn der Spieler am Sitzplatz {@code viewer}
+     * sie gerade sehen darf ({@code CardView.canBeShownTo}: in der Bibliothek nur mit einer
+     * Erlaubnis zum Ansehen bzw. Aufdecken); sonst null.
+     */
+    private static Card libraryTopVisibleTo(Game game, Player owner, int viewer) {
+        java.util.List<Player> seats = game.getRegisteredPlayers();
+        if (viewer < 0 || viewer >= seats.size()) {
+            return null;
+        }
+        forge.game.card.CardCollectionView library = owner.getCardsIn(ZoneType.Library);
+        if (library.isEmpty()) {
+            return null;
+        }
+        Card top = library.get(0);
+        return top.getView().canBeShownTo(seats.get(viewer).getView()) ? top : null;
     }
 
     /**

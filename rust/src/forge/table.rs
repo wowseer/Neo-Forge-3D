@@ -4206,6 +4206,8 @@ impl ForgeTable {
     /// - jede Karte, die gerade aus einer anderen Zone als Hand und Spielfeld spielbar ist –
     ///   Friedhof (Flashback …), Exil (Foretell, Abenteuer, „you may play“), Sideboard
     ///   (Companion), Bibliothek –, mit den Kosten der Spielweise aus dieser Zone;
+    /// - die oberste Karte der Bibliothek, wenn man sie sehen darf (`library_top`, z. B. Mystic
+    ///   Forge, Future Sight) – zum Ansehen; spielbar ist sie über den ersten Punkt;
     /// - die **Commander** beider Seiten, solange sie in der Kommandozone sind (CR 903.6): die
     ///   Kommandozone hat keine eigene Fläche, der Commander ist nur auf der Hand seines Besitzers
     ///   zu sehen – auch beim Gegner offen –, mit den Kosten samt Commander-Steuer (CR 903.8,
@@ -4238,6 +4240,17 @@ impl ForgeTable {
                 let Ok(id) = CardId::try_from(get_int(&c, "id")) else { continue };
                 if !wanted.iter().any(|w| w.1 == id) {
                     wanted.push((seat, id, "Command".to_string(), get_str(&c, "cast_cost"), Some(c), false));
+                }
+            }
+            // oberste Karte der Bibliothek, wenn man sie sehen darf (`library_top`: Mystic Forge,
+            // Future Sight, Courser of Kruphix …): offen neben der Hand; spielbar ist sie dann
+            // über `Priority.elsewhere` (oben schon drin, leuchtet), sonst nur zum Ansehen
+            if let Some(top) = p.get("library_top").and_then(|v| v.try_to::<VarDictionary>().ok()) {
+                if let Ok(id) = CardId::try_from(get_int(&top, "id")) {
+                    if !wanted.iter().any(|w| w.1 == id) {
+                        let cost = get_str(&top, "cost");
+                        wanted.push((seat, id, "LibraryTop".to_string(), cost, Some(top), false));
+                    }
                 }
             }
         }
@@ -5621,6 +5634,7 @@ fn zone_label(zone: &str) -> String {
         "Command" => tr!("aus der Kommandozone", "from command zone").to_string(),
         "Sideboard" => tr!("Begleiter", "Companion").to_string(),
         "Library" => tr!("aus der Bibliothek", "from library").to_string(),
+        "LibraryTop" => tr!("oben auf der Bibliothek", "top of library").to_string(),
         other => other.to_string(),
     }
 }
