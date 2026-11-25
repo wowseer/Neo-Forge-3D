@@ -472,13 +472,15 @@ index cc4e32c..8e3ef54 100644
      private static final class Lowered extends HostedMatch {
          private final int drop;
 diff --git a/forge-gui-neo/src/main/java/forge/neo/ui/SettingsPanel.java b/forge-gui-neo/src/main/java/forge/neo/ui/SettingsPanel.java
-index 9cf4ba3..c9b7eb5 100644
+index 9cf4ba3..de2764d 100644
 --- a/forge-gui-neo/src/main/java/forge/neo/ui/SettingsPanel.java
 +++ b/forge-gui-neo/src/main/java/forge/neo/ui/SettingsPanel.java
-@@ -1002,6 +1002,40 @@ public class SettingsPanel extends VBox {
+@@ -1292,6 +1292,59 @@ public class SettingsPanel extends VBox {
+         bigNote.setMinHeight(Region.USE_PREF_SIZE);
+         getChildren().add(bigNote);
  
-         tab(Tab.TABLE);
- 
++        tab(Tab.CLASH);
++
 +        // --- Neo Forge 3D: 3D-Tisch (Godot) als Spieltisch im 1 gegen 1 ---
 +        // Gilt ab der naechsten Partie; siehe forge.neo.clash.ClashTable.useFor.
 +        getChildren().add(section(NeoText.get("settings.clash")));
@@ -497,6 +499,23 @@ index 9cf4ba3..c9b7eb5 100644
 +        clashNote.getStyleClass().add("settings-note");
 +        clashNote.setWrapText(true);
 +        getChildren().add(clashNote);
++        // Grafikstufe des Tisches (an Godot als --graphics=low|high): Niedrig ist Vorgabe, damit
++        // der Tisch auch auf integrierten GPUs fluessig laeuft; Hoch fuer eigene Grafikkarten.
++        final String gfxLow = NeoText.get("settings.clash.graphics.low");
++        final String gfxHigh = NeoText.get("settings.clash.graphics.high");
++        getChildren().add(choiceRow(NeoText.get("settings.clash.graphics"),
++                new String[] {gfxLow, gfxHigh},
++                forge.neo.clash.ClashTable.GRAPHICS_HIGH.equals(forge.neo.clash.ClashTable.graphics())
++                        ? gfxHigh : gfxLow,
++                v -> {
++                    NeoSettings.set(forge.neo.clash.ClashTable.SETTING_GRAPHICS, gfxHigh.equals(v)
++                            ? forge.neo.clash.ClashTable.GRAPHICS_HIGH : forge.neo.clash.ClashTable.GRAPHICS_LOW);
++                    NeoSettings.save();
++                }));
++        final Label gfxNote = new Label(NeoText.get("settings.clash.graphics.note"));
++        gfxNote.getStyleClass().add("settings-note");
++        gfxNote.setWrapText(true);
++        getChildren().add(gfxNote);
 +        // Godot-Programm und Projektordner nur ohne mitgelieferten (exportierten) Tisch
 +        if (forge.neo.clash.ClashTable.tableProgram() == null) {
 +            getChildren().add(textRow(NeoText.get("settings.clash.godot"),
@@ -513,10 +532,19 @@ index 9cf4ba3..c9b7eb5 100644
 +                    }));
 +        }
 +
-         // --- la ronda al lado del turno ---
-         //
-         // Discord, 13-10-2026: "Turn 23 (Round 12)", para quien lleva la
-@@ -2699,6 +2733,19 @@ public class SettingsPanel extends VBox {
+         tab(Tab.GAME);
+         getChildren().add(section(NeoText.get("settings.rivalsSection")));
+ 
+@@ -1923,7 +1976,7 @@ public class SettingsPanel extends VBox {
+ 
+     /** Las pestanyas, en el orden del carril. El id es el de su texto y el que se guarda. */
+     public enum Tab {
+-        GENERAL("general"), GAME("game"), TABLE("table"), DISPLAY("display"),
++        GENERAL("general"), GAME("game"), TABLE("table"), CLASH("clash3d"), DISPLAY("display"),
+         SOUND("sound"), ART("art"), MODES("modes"), DATA("data"), SUPPORT("support");
+ 
+         public final String id;
+@@ -2699,6 +2752,19 @@ public class SettingsPanel extends VBox {
                  v -> onChange.accept(yes.equals(v)));
      }
  
@@ -537,10 +565,18 @@ index 9cf4ba3..c9b7eb5 100644
          return Math.max(lo, Math.min(hi, v));
      }
 diff --git a/forge-gui-neo/src/main/resources/forge/neo/lang/neo-ar-MA.properties b/forge-gui-neo/src/main/resources/forge/neo/lang/neo-ar-MA.properties
-index 197328f..9b38144 100644
+index 197328f..506cc35 100644
 --- a/forge-gui-neo/src/main/resources/forge/neo/lang/neo-ar-MA.properties
 +++ b/forge-gui-neo/src/main/resources/forge/neo/lang/neo-ar-MA.properties
-@@ -3065,6 +3065,14 @@ over.replay = إغلاق الإعادة
+@@ -2873,6 +2873,7 @@ pile.split.left = البطاقات التي تحددها تذهب إلى الك
+ settings.tab.general = عام
+ settings.tab.game = اللعب
+ settings.tab.table = الطاولة
++settings.tab.clash3d = طاولة ثلاثية الأبعاد
+ settings.tab.display = العرض
+ settings.tab.sound = الصوت
+ settings.tab.art = الرسوم
+@@ -3065,6 +3066,18 @@ over.replay = إغلاق الإعادة
  menu.replays = الإعادات
  settings.replays = الإعادات
  settings.replays.on = تسجيل مبارياتي لمشاهدتها مرة أخرى
@@ -548,6 +584,10 @@ index 197328f..9b38144 100644
 +settings.clash.on = طاولة اللعب
 +settings.clash.2d = طاولة ثنائية الأبعاد
 +settings.clash.3d = طاولة ثلاثية الأبعاد
++settings.clash.graphics = جودة الرسومات
++settings.clash.graphics.low = منخفضة
++settings.clash.graphics.high = عالية
++settings.clash.graphics.note = منخفضة: بدون تظليل محيطي أو توهج، والصورة ثلاثية الأبعاد بدقة 75 %، وتعمل بسلاسة على الرسومات المدمجة (الحواسيب المحمولة). عالية: كل المؤثرات بالدقة الكاملة، لبطاقة رسومات مستقلة. تُطبَّق من المباراة القادمة.
 +settings.clash.note = للمباريات الثنائية (وCommander 1 ضد 1 والمهمة والمغامرة أيضًا). مع أكثر من لاعبَين، أو لاعبَين على نفس الحاسوب، أو مع Planechase أو Archenemy أو Vanguard تُستخدم دائمًا الطاولة ثنائية الأبعاد. يسري من المباراة القادمة.
 +settings.clash.godot = برنامج Godot
 +settings.clash.project = مجلد مشروع Neo Forge 3D (godot)
@@ -556,10 +596,18 @@ index 197328f..9b38144 100644
  settings.replays.assocRemove = التوقف عن فتح ‎.frp‎ بـ Neo Forge
  settings.replays.assocNote = انقر مرتين على إعادة (‎.frp‎) في ويندوز فتُفتح هنا في الإعادات. إذا نقلت مجلد اللعبة، اضغط مرة أخرى.
 diff --git a/forge-gui-neo/src/main/resources/forge/neo/lang/neo-de-DE.properties b/forge-gui-neo/src/main/resources/forge/neo/lang/neo-de-DE.properties
-index 0a2c95e..f81a2cf 100644
+index 0a2c95e..8c916f5 100644
 --- a/forge-gui-neo/src/main/resources/forge/neo/lang/neo-de-DE.properties
 +++ b/forge-gui-neo/src/main/resources/forge/neo/lang/neo-de-DE.properties
-@@ -3066,6 +3066,14 @@ over.replay = Wiederholung schließen
+@@ -2874,6 +2874,7 @@ pile.split.left = Die Karten, die du markierst, kommen auf den linken Stapel; di
+ settings.tab.general = Allgemein
+ settings.tab.game = Spiel
+ settings.tab.table = Tisch
++settings.tab.clash3d = 3D-Tisch
+ settings.tab.display = Anzeige
+ settings.tab.sound = Ton
+ settings.tab.art = Kartenbilder
+@@ -3066,6 +3067,18 @@ over.replay = Wiederholung schließen
  menu.replays = Wiederholungen
  settings.replays = WIEDERHOLUNGEN
  settings.replays.on = Meine Partien aufzeichnen, um sie erneut anzusehen
@@ -567,6 +615,10 @@ index 0a2c95e..f81a2cf 100644
 +settings.clash.on = Spieltisch
 +settings.clash.2d = 2D-Tisch
 +settings.clash.3d = 3D-Tisch
++settings.clash.graphics = Grafikqualität
++settings.clash.graphics.low = Niedrig
++settings.clash.graphics.high = Hoch
++settings.clash.graphics.note = Niedrig: ohne Umgebungsverdeckung und Leuchten, 3D-Bild in 75 % Auflösung, läuft auch auf integrierter Grafik (Notebook) flüssig. Hoch: alle Effekte in voller Auflösung, für eine eigene Grafikkarte. Gilt ab der nächsten Partie.
 +settings.clash.note = Gilt für Partien zu zweit (auch Commander 1 gegen 1, Quest und Adventure). Mit mehr als zwei Spielern, zu zweit am selben Rechner oder mit Planechase, Archenemy oder Vanguard wird immer der 2D-Tisch genommen. Gilt ab der nächsten Partie.
 +settings.clash.godot = Godot-Programm
 +settings.clash.project = Projektordner von Neo Forge 3D (godot)
@@ -575,10 +627,18 @@ index 0a2c95e..f81a2cf 100644
  settings.replays.assocRemove = .frp-Dateien nicht mehr mit Neo Forge öffnen
  settings.replays.assocNote = Doppelklicke in Windows auf eine Wiederholung (.frp), und sie öffnet sich hier unter Wiederholungen. Wenn du den Spielordner verschiebst, drück es erneut.
 diff --git a/forge-gui-neo/src/main/resources/forge/neo/lang/neo-en-US.properties b/forge-gui-neo/src/main/resources/forge/neo/lang/neo-en-US.properties
-index 3913dad..245c08d 100644
+index 3913dad..12c68f8 100644
 --- a/forge-gui-neo/src/main/resources/forge/neo/lang/neo-en-US.properties
 +++ b/forge-gui-neo/src/main/resources/forge/neo/lang/neo-en-US.properties
-@@ -3062,6 +3062,14 @@ over.replay = Close the replay
+@@ -2870,6 +2870,7 @@ pile.split.left = The cards you mark go to the left pile; the rest go to the rig
+ settings.tab.general = General
+ settings.tab.game = Game
+ settings.tab.table = Table
++settings.tab.clash3d = 3D table
+ settings.tab.display = Display
+ settings.tab.sound = Sound
+ settings.tab.art = Art
+@@ -3062,6 +3063,18 @@ over.replay = Close the replay
  menu.replays = Replays
  settings.replays = REPLAYS
  settings.replays.on = Record my games to watch them again
@@ -586,6 +646,10 @@ index 3913dad..245c08d 100644
 +settings.clash.on = Game table
 +settings.clash.2d = 2D table
 +settings.clash.3d = 3D table
++settings.clash.graphics = Graphics quality
++settings.clash.graphics.low = Low
++settings.clash.graphics.high = High
++settings.clash.graphics.note = Low: no ambient occlusion or glow, 3D image at 75 % resolution; runs smoothly on integrated graphics (laptops). High: all effects at full resolution, for a dedicated graphics card. Applies from the next match.
 +settings.clash.note = Applies to two-player games (Commander 1 vs 1, Quest and Adventure too). With more than two players, two people on one computer, or Planechase, Archenemy or Vanguard, the 2D table is always used. Applies from the next game.
 +settings.clash.godot = Godot program
 +settings.clash.project = Neo Forge 3D project folder (godot)
@@ -594,10 +658,18 @@ index 3913dad..245c08d 100644
  settings.replays.assocRemove = Stop opening .frp files with Neo Forge
  settings.replays.assocNote = Double-click a replay (.frp) in Windows and it opens here, in Replays. If you move the game folder, press it again.
 diff --git a/forge-gui-neo/src/main/resources/forge/neo/lang/neo-es-ES.properties b/forge-gui-neo/src/main/resources/forge/neo/lang/neo-es-ES.properties
-index 4f5c93d..955e596 100644
+index 4f5c93d..e13385d 100644
 --- a/forge-gui-neo/src/main/resources/forge/neo/lang/neo-es-ES.properties
 +++ b/forge-gui-neo/src/main/resources/forge/neo/lang/neo-es-ES.properties
-@@ -3298,6 +3298,14 @@ over.replay = Cerrar la repetición
+@@ -3106,6 +3106,7 @@ pile.split.left = Las cartas que marques van a la pila de la izquierda; las dem
+ settings.tab.general = General
+ settings.tab.game = Partida
+ settings.tab.table = Mesa
++settings.tab.clash3d = Mesa 3D
+ settings.tab.display = Pantalla
+ settings.tab.sound = Sonido
+ settings.tab.art = Arte
+@@ -3298,6 +3299,18 @@ over.replay = Cerrar la repetición
  menu.replays = Repeticiones
  settings.replays = REPETICIONES
  settings.replays.on = Grabar mis partidas para volver a verlas
@@ -605,6 +677,10 @@ index 4f5c93d..955e596 100644
 +settings.clash.on = Mesa de juego
 +settings.clash.2d = Mesa 2D
 +settings.clash.3d = Mesa 3D
++settings.clash.graphics = Calidad gráfica
++settings.clash.graphics.low = Baja
++settings.clash.graphics.high = Alta
++settings.clash.graphics.note = Baja: sin oclusión ambiental ni resplandor, imagen 3D al 75 % de resolución; va fluida con gráficos integrados (portátiles). Alta: todos los efectos a resolución completa, para una tarjeta gráfica dedicada. Se aplica desde la próxima partida.
 +settings.clash.note = Para partidas de dos (también Commander 1 contra 1, Quest y Aventura). Con más de dos jugadores, dos en el mismo ordenador o con Planechase, Archenemy o Vanguard se usa siempre la mesa 2D. Vale desde la próxima partida.
 +settings.clash.godot = Programa Godot
 +settings.clash.project = Carpeta del proyecto Neo Forge 3D (godot)
@@ -613,10 +689,18 @@ index 4f5c93d..955e596 100644
  settings.replays.assocRemove = Dejar de abrir los .frp con Neo Forge
  settings.replays.assocNote = Haz doble clic en una repetición (.frp) en Windows y se abre aquí, en Repeticiones. Si mueves la carpeta del juego, vuelve a pulsarlo.
 diff --git a/forge-gui-neo/src/main/resources/forge/neo/lang/neo-fr-FR.properties b/forge-gui-neo/src/main/resources/forge/neo/lang/neo-fr-FR.properties
-index 888963f..3c46f63 100644
+index 888963f..bc3f323 100644
 --- a/forge-gui-neo/src/main/resources/forge/neo/lang/neo-fr-FR.properties
 +++ b/forge-gui-neo/src/main/resources/forge/neo/lang/neo-fr-FR.properties
-@@ -3063,6 +3063,14 @@ over.replay = Fermer la rediffusion
+@@ -2871,6 +2871,7 @@ pile.split.left = Les cartes que tu coches vont dans la pile de gauche ; les aut
+ settings.tab.general = Général
+ settings.tab.game = Partie
+ settings.tab.table = Table
++settings.tab.clash3d = Table 3D
+ settings.tab.display = Affichage
+ settings.tab.sound = Son
+ settings.tab.art = Illustrations
+@@ -3063,6 +3064,18 @@ over.replay = Fermer la rediffusion
  menu.replays = Rediffusions
  settings.replays = REDIFFUSIONS
  settings.replays.on = Enregistrer mes parties pour les revoir
@@ -624,6 +708,10 @@ index 888963f..3c46f63 100644
 +settings.clash.on = Table de jeu
 +settings.clash.2d = Table 2D
 +settings.clash.3d = Table 3D
++settings.clash.graphics = Qualité graphique
++settings.clash.graphics.low = Basse
++settings.clash.graphics.high = Haute
++settings.clash.graphics.note = Basse : sans occlusion ambiante ni lueur, image 3D à 75 % de la résolution ; fluide sur une carte graphique intégrée (portables). Haute : tous les effets en pleine résolution, pour une carte graphique dédiée. S'applique à la prochaine partie.
 +settings.clash.note = Pour les parties à deux (Commander en 1 contre 1, Quête et Aventure aussi). À plus de deux joueurs, à deux sur le même ordinateur ou avec Planechase, Archenemy ou Vanguard, la table 2D est toujours utilisée. S’applique à partir de la prochaine partie.
 +settings.clash.godot = Programme Godot
 +settings.clash.project = Dossier du projet Neo Forge 3D (godot)
@@ -632,10 +720,18 @@ index 888963f..3c46f63 100644
  settings.replays.assocRemove = Ne plus ouvrir les .frp avec Neo Forge
  settings.replays.assocNote = Double-clique sur un replay (.frp) dans Windows et il s'ouvre ici, dans Replays. Si tu déplaces le dossier du jeu, appuie à nouveau.
 diff --git a/forge-gui-neo/src/main/resources/forge/neo/lang/neo-it-IT.properties b/forge-gui-neo/src/main/resources/forge/neo/lang/neo-it-IT.properties
-index 32f8f2f..b80c2dd 100644
+index 32f8f2f..d066441 100644
 --- a/forge-gui-neo/src/main/resources/forge/neo/lang/neo-it-IT.properties
 +++ b/forge-gui-neo/src/main/resources/forge/neo/lang/neo-it-IT.properties
-@@ -3062,6 +3062,14 @@ over.replay = Chiudi il replay
+@@ -2870,6 +2870,7 @@ pile.split.left = Le carte che segni vanno nella pila di sinistra; le altre, in
+ settings.tab.general = Generale
+ settings.tab.game = Partita
+ settings.tab.table = Tavolo
++settings.tab.clash3d = Tavolo 3D
+ settings.tab.display = Schermo
+ settings.tab.sound = Audio
+ settings.tab.art = Illustrazioni
+@@ -3062,6 +3063,18 @@ over.replay = Chiudi il replay
  menu.replays = Replay
  settings.replays = REPLAY
  settings.replays.on = Registra le mie partite per rivederle
@@ -643,6 +739,10 @@ index 32f8f2f..b80c2dd 100644
 +settings.clash.on = Tavolo di gioco
 +settings.clash.2d = Tavolo 2D
 +settings.clash.3d = Tavolo 3D
++settings.clash.graphics = Qualità grafica
++settings.clash.graphics.low = Bassa
++settings.clash.graphics.high = Alta
++settings.clash.graphics.note = Bassa: senza occlusione ambientale né bagliore, immagine 3D al 75 % della risoluzione; fluida con grafica integrata (portatili). Alta: tutti gli effetti a piena risoluzione, per una scheda grafica dedicata. Vale dalla prossima partita.
 +settings.clash.note = Per le partite a due (anche Commander 1 contro 1, Quest e Avventura). Con più di due giocatori, in due sullo stesso computer o con Planechase, Archenemy o Vanguard si usa sempre il tavolo 2D. Vale dalla prossima partita.
 +settings.clash.godot = Programma Godot
 +settings.clash.project = Cartella del progetto Neo Forge 3D (godot)
@@ -651,10 +751,18 @@ index 32f8f2f..b80c2dd 100644
  settings.replays.assocRemove = Non aprire più i .frp con Neo Forge
  settings.replays.assocNote = Fai doppio clic su un replay (.frp) in Windows e si apre qui, in Replay. Se sposti la cartella del gioco, premilo di nuovo.
 diff --git a/forge-gui-neo/src/main/resources/forge/neo/lang/neo-ja-JP.properties b/forge-gui-neo/src/main/resources/forge/neo/lang/neo-ja-JP.properties
-index 67583da..0b1e449 100644
+index 67583da..ef7a669 100644
 --- a/forge-gui-neo/src/main/resources/forge/neo/lang/neo-ja-JP.properties
 +++ b/forge-gui-neo/src/main/resources/forge/neo/lang/neo-ja-JP.properties
-@@ -3065,6 +3065,14 @@ over.replay = リプレイを閉じる
+@@ -2873,6 +2873,7 @@ pile.split.left = 選んだカードは左の束に、残りは右の束に入
+ settings.tab.general = 一般
+ settings.tab.game = ゲーム
+ settings.tab.table = 盤面
++settings.tab.clash3d = 3Dテーブル
+ settings.tab.display = 表示
+ settings.tab.sound = サウンド
+ settings.tab.art = カードアート
+@@ -3065,6 +3066,18 @@ over.replay = リプレイを閉じる
  menu.replays = リプレイ
  settings.replays = リプレイ
  settings.replays.on = 対戦を記録してあとで見直す
@@ -662,6 +770,10 @@ index 67583da..0b1e449 100644
 +settings.clash.on = プレイテーブル
 +settings.clash.2d = 2Dテーブル
 +settings.clash.3d = 3Dテーブル
++settings.clash.graphics = グラフィック品質
++settings.clash.graphics.low = 低
++settings.clash.graphics.high = 高
++settings.clash.graphics.note = 低：アンビエントオクルージョンと発光なし、3D画像は解像度75 %。内蔵グラフィック（ノートPC）でも滑らかに動きます。高：すべての効果をフル解像度で、専用グラフィックカード向け。次の対戦から適用されます。
 +settings.clash.note = 2人対戦に適用されます（統率者戦1対1、クエスト、アドベンチャーも含む）。3人以上、同じPCでの2人対戦、プレインチェイス・アーチエネミー・ヴァンガードでは常に2Dテーブルを使います。次の対戦から反映されます。
 +settings.clash.godot = Godotプログラム
 +settings.clash.project = Neo Forge 3Dのプロジェクトフォルダ（godot）
@@ -670,10 +782,18 @@ index 67583da..0b1e449 100644
  settings.replays.assocRemove = .frpファイルをNeo Forgeで開かない
  settings.replays.assocNote = Windowsでリプレイ(.frp)をダブルクリックすると、ここ（リプレイ）で開きます。ゲームのフォルダを移動したら、もう一度押してください。
 diff --git a/forge-gui-neo/src/main/resources/forge/neo/lang/neo-ko-KR.properties b/forge-gui-neo/src/main/resources/forge/neo/lang/neo-ko-KR.properties
-index 4cf0caf..bcc899e 100644
+index 4cf0caf..ffd9aa9 100644
 --- a/forge-gui-neo/src/main/resources/forge/neo/lang/neo-ko-KR.properties
 +++ b/forge-gui-neo/src/main/resources/forge/neo/lang/neo-ko-KR.properties
-@@ -3071,6 +3071,14 @@ over.replay = 리플레이 닫기
+@@ -2879,6 +2879,7 @@ pile.split.left = 표시한 카드는 왼쪽 더미로, 나머지는 오른쪽 
+ settings.tab.general = 일반
+ settings.tab.game = 게임
+ settings.tab.table = 테이블
++settings.tab.clash3d = 3D 테이블
+ settings.tab.display = 화면
+ settings.tab.sound = 사운드
+ settings.tab.art = 카드 아트
+@@ -3071,6 +3072,18 @@ over.replay = 리플레이 닫기
  menu.replays = 리플레이
  settings.replays = 리플레이
  settings.replays.on = 다시 볼 수 있도록 내 게임 녹화
@@ -681,6 +801,10 @@ index 4cf0caf..bcc899e 100644
 +settings.clash.on = 게임 테이블
 +settings.clash.2d = 2D 테이블
 +settings.clash.3d = 3D 테이블
++settings.clash.graphics = 그래픽 품질
++settings.clash.graphics.low = 낮음
++settings.clash.graphics.high = 높음
++settings.clash.graphics.note = 낮음: 앰비언트 오클루전과 글로우 없이 3D 화면을 75 % 해상도로 표시하여 내장 그래픽(노트북)에서도 부드럽게 실행됩니다. 높음: 모든 효과를 전체 해상도로, 전용 그래픽 카드용. 다음 대전부터 적용됩니다.
 +settings.clash.note = 2인 게임에 적용됩니다(커맨더 1대1, 퀘스트, 어드벤처 포함). 플레이어가 셋 이상이거나, 한 컴퓨터에서 2인이 하거나, 플레인체이스·아크에너미·뱅가드일 때는 항상 2D 테이블을 사용합니다. 다음 게임부터 적용됩니다.
 +settings.clash.godot = Godot 프로그램
 +settings.clash.project = Neo Forge 3D 프로젝트 폴더 (godot)
@@ -689,10 +813,18 @@ index 4cf0caf..bcc899e 100644
  settings.replays.assocRemove = .frp 파일을 Neo Forge로 열지 않기
  settings.replays.assocNote = Windows에서 리플레이(.frp)를 더블 클릭하면 여기 리플레이에서 열립니다. 게임 폴더를 옮기면 다시 눌러 주세요.
 diff --git a/forge-gui-neo/src/main/resources/forge/neo/lang/neo-pt-BR.properties b/forge-gui-neo/src/main/resources/forge/neo/lang/neo-pt-BR.properties
-index 84e5df7..c7c3e72 100644
+index 84e5df7..e5f9f8a 100644
 --- a/forge-gui-neo/src/main/resources/forge/neo/lang/neo-pt-BR.properties
 +++ b/forge-gui-neo/src/main/resources/forge/neo/lang/neo-pt-BR.properties
-@@ -3063,6 +3063,14 @@ over.replay = Fechar o replay
+@@ -2871,6 +2871,7 @@ pile.split.left = As cartas que você marcar vão para a pilha da esquerda; as o
+ settings.tab.general = Geral
+ settings.tab.game = Partida
+ settings.tab.table = Mesa
++settings.tab.clash3d = Mesa 3D
+ settings.tab.display = Tela
+ settings.tab.sound = Som
+ settings.tab.art = Arte
+@@ -3063,6 +3064,18 @@ over.replay = Fechar o replay
  menu.replays = Replays
  settings.replays = REPLAYS
  settings.replays.on = Gravar minhas partidas para revê-las
@@ -700,6 +832,10 @@ index 84e5df7..c7c3e72 100644
 +settings.clash.on = Mesa de jogo
 +settings.clash.2d = Mesa 2D
 +settings.clash.3d = Mesa 3D
++settings.clash.graphics = Qualidade gráfica
++settings.clash.graphics.low = Baixa
++settings.clash.graphics.high = Alta
++settings.clash.graphics.note = Baixa: sem oclusão de ambiente nem brilho, imagem 3D a 75 % da resolução; roda liso em gráficos integrados (notebooks). Alta: todos os efeitos em resolução total, para uma placa de vídeo dedicada. Vale a partir da próxima partida.
 +settings.clash.note = Para partidas a dois (Commander 1 contra 1, Quest e Aventura também). Com mais de dois jogadores, dois no mesmo computador ou com Planechase, Archenemy ou Vanguard, a mesa 2D é sempre usada. Vale a partir da próxima partida.
 +settings.clash.godot = Programa Godot
 +settings.clash.project = Pasta do projeto Neo Forge 3D (godot)
@@ -708,10 +844,18 @@ index 84e5df7..c7c3e72 100644
  settings.replays.assocRemove = Parar de abrir .frp com o Neo Forge
  settings.replays.assocNote = Clique duas vezes num replay (.frp) no Windows e ele abre aqui, em Replays. Se mover a pasta do jogo, aperte de novo.
 diff --git a/forge-gui-neo/src/main/resources/forge/neo/lang/neo-ru-RU.properties b/forge-gui-neo/src/main/resources/forge/neo/lang/neo-ru-RU.properties
-index d64779f..51bf782 100644
+index d64779f..65a228a 100644
 --- a/forge-gui-neo/src/main/resources/forge/neo/lang/neo-ru-RU.properties
 +++ b/forge-gui-neo/src/main/resources/forge/neo/lang/neo-ru-RU.properties
-@@ -3062,6 +3062,14 @@ over.replay = Закрыть повтор
+@@ -2870,6 +2870,7 @@ pile.split.left = Отмеченные карты идут в левую сто
+ settings.tab.general = Общие
+ settings.tab.game = Партия
+ settings.tab.table = Стол
++settings.tab.clash3d = 3D-стол
+ settings.tab.display = Экран
+ settings.tab.sound = Звук
+ settings.tab.art = Арт
+@@ -3062,6 +3063,18 @@ over.replay = Закрыть повтор
  menu.replays = Повторы
  settings.replays = ПОВТОРЫ
  settings.replays.on = Записывать мои партии, чтобы пересматривать их
@@ -719,6 +863,10 @@ index d64779f..51bf782 100644
 +settings.clash.on = Игровой стол
 +settings.clash.2d = 2D-стол
 +settings.clash.3d = 3D-стол
++settings.clash.graphics = Качество графики
++settings.clash.graphics.low = Низкое
++settings.clash.graphics.high = Высокое
++settings.clash.graphics.note = Низкое: без затенения и свечения, 3D-изображение в 75 % разрешения; плавно работает на встроенной графике (ноутбуки). Высокое: все эффекты в полном разрешении, для дискретной видеокарты. Действует со следующей партии.
 +settings.clash.note = Для партий вдвоём (и Commander 1 на 1, Quest и Adventure). При более чем двух игроках, вдвоём за одним компьютером или с Planechase, Archenemy или Vanguard всегда используется 2D-стол. Действует со следующей партии.
 +settings.clash.godot = Программа Godot
 +settings.clash.project = Папка проекта Neo Forge 3D (godot)
@@ -727,10 +875,18 @@ index d64779f..51bf782 100644
  settings.replays.assocRemove = Больше не открывать .frp в Neo Forge
  settings.replays.assocNote = Дважды щёлкните по записи (.frp) в Windows, и она откроется здесь, в «Записях». Если переместите папку игры, нажмите снова.
 diff --git a/forge-gui-neo/src/main/resources/forge/neo/lang/neo-zh-CN.properties b/forge-gui-neo/src/main/resources/forge/neo/lang/neo-zh-CN.properties
-index c0995e9..633d771 100644
+index c0995e9..49c44bc 100644
 --- a/forge-gui-neo/src/main/resources/forge/neo/lang/neo-zh-CN.properties
 +++ b/forge-gui-neo/src/main/resources/forge/neo/lang/neo-zh-CN.properties
-@@ -3065,6 +3065,14 @@ over.replay = 关闭回放
+@@ -2873,6 +2873,7 @@ pile.split.left = 你标记的牌放进左边的一堆，其余的放进右边
+ settings.tab.general = 常规
+ settings.tab.game = 对局
+ settings.tab.table = 牌桌
++settings.tab.clash3d = 3D 牌桌
+ settings.tab.display = 显示
+ settings.tab.sound = 声音
+ settings.tab.art = 卡图
+@@ -3065,6 +3066,18 @@ over.replay = 关闭回放
  menu.replays = 回放
  settings.replays = 回放
  settings.replays.on = 录制我的对局以便回看
@@ -738,6 +894,10 @@ index c0995e9..633d771 100644
 +settings.clash.on = 牌桌
 +settings.clash.2d = 2D 牌桌
 +settings.clash.3d = 3D 牌桌
++settings.clash.graphics = 画面质量
++settings.clash.graphics.low = 低
++settings.clash.graphics.high = 高
++settings.clash.graphics.note = 低：无环境光遮蔽和辉光，3D 画面为 75 % 分辨率，集成显卡（笔记本）也能流畅运行。高：全部特效、全分辨率，适合独立显卡。从下一局开始生效。
 +settings.clash.note = 适用于双人对局（包括指挥官 1 对 1、任务和冒险）。超过两名玩家、同一台电脑双人对局，或使用时空竞逐、魔王对决、先锋时，始终使用 2D 牌桌。从下一局开始生效。
 +settings.clash.godot = Godot 程序
 +settings.clash.project = Neo Forge 3D 项目文件夹（godot）

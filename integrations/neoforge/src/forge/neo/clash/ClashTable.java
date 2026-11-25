@@ -45,6 +45,12 @@ public final class ClashTable {
     public static final String SETTING_GODOT = "clash3d.godot";
     public static final String SETTING_PROJECT = "clash3d.project";
     public static final String SETTING_TABLE = "clash3d.table";
+    /** Grafikstufe des Tisches: {@link #GRAPHICS_LOW} (Vorgabe) oder {@link #GRAPHICS_HIGH}. */
+    public static final String SETTING_GRAPHICS = "clash3d.graphics";
+    /** Sparsam: ohne SSAO und Glow, 3D-Auflösung 75 % (flüssig auf integrierten GPUs). */
+    public static final String GRAPHICS_LOW = "low";
+    /** Alle Effekte in voller Auflösung (für eigene Grafikkarten). */
+    public static final String GRAPHICS_HIGH = "high";
 
     /** Ordner des mitgelieferten Tisches neben NeoForges Klassen bzw. Jar (siehe {@link #bundledTable()}). */
     public static final String BUNDLE_DIR = "clash3d";
@@ -88,6 +94,16 @@ public final class ClashTable {
             }
         }
         return true;
+    }
+
+    /**
+     * Grafikstufe für den Tisch ({@link #GRAPHICS_LOW} oder {@link #GRAPHICS_HIGH}): Einstellung
+     * aus NeoForges Menü, sonst {@code -Dneo.clash.graphics} / {@code CLASH_GRAPHICS}, sonst
+     * {@link #GRAPHICS_LOW}. Wird dem Tisch als {@code --graphics=…} mitgegeben.
+     */
+    public static String graphics() {
+        String v = setting("neo.clash.graphics", "CLASH_GRAPHICS", SETTING_GRAPHICS, GRAPHICS_LOW);
+        return GRAPHICS_HIGH.equalsIgnoreCase(v) ? GRAPHICS_HIGH : GRAPHICS_LOW;
     }
 
     /** Godot-Programm (Einstellung, sonst {@code godot} aus dem PATH). */
@@ -309,6 +325,7 @@ public final class ClashTable {
         if (window != null) {
             config = config.withWindow(window);
         }
+        config = config.withTableArgs(List.of("--graphics=" + graphics()));
         try {
             TableLauncher.Session session = TableLauncher.launch(config);
             System.out.println("[clash] Tisch verbunden (" + config.program() + ", Port " + session.port()

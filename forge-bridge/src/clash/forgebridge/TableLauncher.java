@@ -34,22 +34,29 @@ public final class TableLauncher {
      * @param log       Datei für die Ausgaben des Tisch-Prozesses ({@code null} = verwerfen)
      * @param window    wo sich das Fenster öffnen soll (Fensterübergabe, als Godot-Argumente
      *                  {@link TableWindow#godotArgs()}); {@code null} = wo der Tisch will
+     * @param tableArgs Argumente für den Tisch selbst, nach {@code --} (z. B. {@code --graphics=low})
      */
-    public record Config(String program, List<String> arguments, int timeoutMs, File log, TableWindow window) {
-        /** Ohne Fensterlage. */
+    public record Config(String program, List<String> arguments, int timeoutMs, File log, TableWindow window,
+            List<String> tableArgs) {
+        /** Ohne Fensterlage und Tisch-Argumente. */
         public Config(String program, List<String> arguments, int timeoutMs, File log) {
-            this(program, arguments, timeoutMs, log, null);
+            this(program, arguments, timeoutMs, log, null, List.of());
         }
 
         /** Godot-Tisch: {@code godot --path project}, 120 s Wartezeit, Log im Temp-Ordner. */
         public Config(String godot, String project) {
             this(godot, List.of("--path", project), 120_000,
-                    new File(System.getProperty("java.io.tmpdir"), "clash-table.log"), null);
+                    new File(System.getProperty("java.io.tmpdir"), "clash-table.log"), null, List.of());
         }
 
         /** Dieselbe Konfiguration mit Fensterlage {@code w}. */
         public Config withWindow(TableWindow w) {
-            return new Config(program, arguments, timeoutMs, log, w);
+            return new Config(program, arguments, timeoutMs, log, w, tableArgs);
+        }
+
+        /** Dieselbe Konfiguration mit den Tisch-Argumenten {@code args} (nach {@code --}). */
+        public Config withTableArgs(List<String> args) {
+            return new Config(program, arguments, timeoutMs, log, window, List.copyOf(args));
         }
     }
 
@@ -70,6 +77,7 @@ public final class TableLauncher {
             }
             cmd.add("--");
             cmd.add("--clash-port=" + server.getLocalPort());
+            cmd.addAll(config.tableArgs());
             ProcessBuilder pb = new ProcessBuilder(cmd).redirectErrorStream(true);
             pb.redirectOutput(config.log() == null ? ProcessBuilder.Redirect.DISCARD : ProcessBuilder.Redirect.to(config.log()));
             process = pb.start();

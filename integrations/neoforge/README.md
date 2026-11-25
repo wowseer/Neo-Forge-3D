@@ -72,9 +72,11 @@ path (see `tools/neoforge_clash.sh`).
 
 ## Enabling
 
-Choose the table in *Settings → Table → 3D table (Neo Forge 3D)*: "Game table" = **2D table** or
-**3D table**. The default is the 3D table. With more than two players the 2D table is always used,
-whatever is chosen there. Without a bundled table the section also shows "Godot program" (Godot 4.7) and
+Settings have their own tab *Settings → 3D table*: "Game table" = **2D table** or **3D table**
+(default: 3D table), and "Graphics quality" = **Low** (default: no SSAO/glow, 3D scene at 75 %
+resolution, smooth on integrated GPUs) or **High** (all effects, full resolution). NeoForge passes
+the quality to the table as `-- --graphics=low|high`. With more than two players the 2D table is
+always used, whatever is chosen there. Without a bundled table the section also shows "Godot program" (Godot 4.7) and
 "Neo Forge 3D project folder" (`godot/` of Neo Forge 3D) for when the start script does not provide
 them. Applies from the next match.
 
@@ -83,6 +85,7 @@ Each value is taken from the first source that has it:
 | System property (this start only) | NeoForge setting | Environment variable (default) | Meaning |
 |---|---|---|---|
 | `neo.clash=false` | `clash3d` | `NEOFORGE_CLASH=false` | use the 3D table (default: yes) |
+| `neo.clash.graphics=high` | `clash3d.graphics` | `CLASH_GRAPHICS=high` | graphics quality `low` (default) or `high` |
 | `neo.clash.table` | `clash3d.table` | `CLASH_TABLE` | exported table to start (otherwise the bundled one in `clash3d/`) |
 | `neo.clash.godot` | `clash3d.godot` | `CLASH_GODOT` | Godot executable (otherwise `godot`) |
 | `neo.clash.project` | `clash3d.project` | `CLASH_PROJECT` | Godot project folder of Neo Forge 3D (only without an exported table) |
