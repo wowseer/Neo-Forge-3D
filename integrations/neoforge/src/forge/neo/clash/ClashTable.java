@@ -381,13 +381,11 @@ public final class ClashTable {
     }
 
     /** Zufall für die Gesichter der Gegner. */
-    private static final java.util.Random RANDOM = new java.util.Random();
-
     /**
      * Aussehen aus „Anpassen“ an den Tisch schicken ({@link ClashBridge#sendLook}): Der vom Tisch
      * gespielte Sitz bekommt dein Gesicht und deine Kartenhülle (die des Decks, sonst die aus
-     * „Anpassen“, {@code NeoLook.sleeveInPlay()} – wie NeoForges eigener Tisch), jeder Gegner ein
-     * zufälliges Gesicht aus Forges Avataren und seine Hülle (aus „Anpassen → Rivalen“, sonst die,
+     * „Anpassen“, {@code NeoLook.sleeveInPlay()} – wie NeoForges eigener Tisch), jeder Gegner dasselbe
+     * Gesicht wie an NeoForges 2D-Tisch ({@link #opponentFace}) und seine Hülle (aus „Anpassen → Rivalen“, sonst die,
      * die ihm die Engine gibt). Bilder aus Forges Sprite-Bögen werden als PNG in den Temp-Ordner
      * geschrieben. Nach dem Aufstellen der Spieler aufrufen (Sitzplatz = Index in {@code players}).
      */
@@ -411,8 +409,7 @@ public final class ClashTable {
                     face = forge.neo.look.NeoLook.currentAvatar();
                     sleeve = forge.neo.look.NeoLook.sleeveInPlay();
                 } else {
-                    int faces = forge.neo.look.NeoLook.builtInAvatarCount();
-                    face = faces > 0 ? forge.neo.look.NeoLook.builtInAvatar(RANDOM.nextInt(faces)) : null;
+                    face = opponentFace(lp);
                     String custom = forge.neo.look.NeoPlayers.customSleeveOf(lp.getName());
                     forge.neo.look.LookItem own = custom == null ? null : forge.neo.look.NeoLook.sleeveById(custom);
                     sleeve = own != null ? own : forge.neo.look.NeoLook.builtInSleeve(lp.getSleeveIndex());
@@ -426,6 +423,23 @@ public final class ClashTable {
                 System.err.println("[clash] Aussehen für Sitz " + seat + " nicht verfügbar: " + e);
             }
         }
+    }
+
+    /**
+     * Gesicht eines Gegners, nach derselben Regel wie NeoForges 2D-Tisch ({@code TableBinder.faceOf}):
+     * ein eigenes Bild aus „Anpassen → Rivalen“ (nach Namen), sonst der Avatar aus Forges Sprite-Bogen,
+     * den die Engine dem Spieler zuteilt ({@code LobbyPlayer.getAvatarIndex()}). So zeigen 2D- und
+     * 3D-Tisch denselben Gegner, und er bleibt in jeder Partie derselbe.
+     */
+    private static forge.neo.look.LookItem opponentFace(LobbyPlayer lp) {
+        String custom = forge.neo.look.NeoPlayers.customFaceOf(lp.getName());
+        if (custom != null) {
+            forge.neo.look.LookItem own = forge.neo.look.NeoLook.avatarById(custom);
+            if (own != null && !own.isNone()) {
+                return own;
+            }
+        }
+        return forge.neo.look.NeoLook.builtInAvatar(lp.getAvatarIndex());
     }
 
     /** Bilddatei zu {@code item}: eigene Datei direkt, Sprite als PNG nach {@code dir}; sonst {@code null}. */

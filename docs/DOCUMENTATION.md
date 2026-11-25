@@ -442,7 +442,7 @@ runs, NeoForge's window says "The game is running in the 3D table window."
 
 **Look:** NeoForge passes on your settings from *Customise*: your chosen face appears in your
 medallion and your card sleeve on the backs of your cards (e.g. your library); the opponent
-always gets a random face and the sleeve NeoForge gives that rival (protocol
+gets the same face as on NeoForge's 2D table and the sleeve NeoForge gives that rival (protocol
 message `look`, `ForgeTable::on_look`). Without NeoForge the table keeps its drawn figures and
 its own card back.
 
