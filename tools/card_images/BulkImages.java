@@ -96,9 +96,25 @@ public class BulkImages {
                 }
             }
         }
-        // Forge liest die Spielsteine erst bei Bedarf ein
-        StaticData.instance().getAllTokens().preloadTokens();
-        for (PaperToken pt : StaticData.instance().getAllTokens().getAllTokens()) {
+        // Forge erzeugt Spielstein-Drucke erst bei Bedarf: je Edition alle dort verzeichneten
+        // Spielsteine holen (einzeln, ein fehlerhafter Eintrag bricht sonst alles ab)
+        List<PaperToken> allTokens = new ArrayList<>();
+        for (CardEdition ed : StaticData.instance().getEditions()) {
+            for (String script : ed.getTokens().keySet()) {
+                int prints = ed.getTokens().get(script).size();
+                for (int i = 0; i < prints; i++) {
+                    try {
+                        PaperToken pt = StaticData.instance().getAllTokens().getToken(script, ed.getCode(), i);
+                        if (pt != null) {
+                            allTokens.add(pt);
+                        }
+                    } catch (RuntimeException e) {
+                        // fehlerhafter Eintrag
+                    }
+                }
+            }
+        }
+        for (PaperToken pt : allTokens) {
             try {
                 String file = pt.getImageFilename(1);
                 CardEdition ed = StaticData.instance().getCardEdition(pt.getEdition());
