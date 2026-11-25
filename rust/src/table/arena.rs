@@ -60,6 +60,14 @@ pub struct Arena {
     #[export]
     #[var(set = set_opponent_color)]
     opponent_color: Color,
+    /// Spielfeld aus `res://setpieces/<name>.glb` statt der prozeduralen Kulisse (aus den
+    /// Blender-Dateien in `Set Pieces/`, `tools/export_setpieces.sh`): `arena`, `burg`, `ebene`,
+    /// `gebirge`, `inseln`, `oedland`, `sumpf`, `taverne`, `wald`; `random` = eines davon
+    /// zufällig; leer = prozedurale Kulisse. Vorrang haben das Programmargument `--board=<name>`
+    /// (nach `--`) und die Umgebungsvariable `CLASH_BOARD` (so wählt NeoForge das Spielfeld).
+    #[export]
+    #[var(set = set_board)]
+    board: GString,
     /// Neuaufbau ist bereits (verzögert) angefordert.
     rebuild_pending: bool,
     base: Base<Node3D>,
@@ -74,6 +82,7 @@ impl INode3D for Arena {
             rune_glow: 1.6,
             player_color: Color::from_rgb(0.12, 0.32, 0.62),
             opponent_color: Color::from_rgb(0.55, 0.1, 0.1),
+            board: GString::new(),
             rebuild_pending: false,
             base,
         }
@@ -115,6 +124,13 @@ impl Arena {
         self.request_rebuild();
     }
 
+    /// Setter für [member board]; baut die Kulisse (verzögert) neu auf, wenn sie schon steht.
+    #[func]
+    fn set_board(&mut self, value: GString) {
+        self.board = value;
+        self.request_rebuild();
+    }
+
     /// Setter für [member player_color]; baut die Kulisse (verzögert) neu auf, wenn sie schon steht.
     #[func]
     fn set_player_color(&mut self, value: Color) {
@@ -150,6 +166,15 @@ impl Arena {
                 child.queue_free();
             }
         }
+        // gewähltes Spielfeld (Blender-Kulisse); fehlt es, die prozedurale Kulisse
+        if let Some(scene) = chosen_board(&self.board.to_string()) {
+            let mut node = scene.instantiate().expect("Spielfeld instanziieren");
+            tune_board_lights(&node);
+            self.base_mut().add_child(&node);
+            node.set_name("Spielfeld");
+            super::layers::mark_background(&self.base().clone().upcast());
+            return;
+        }
         let m = Materials::new();
         self.build_board(&m);
         self.build_rim(&m);
@@ -160,6 +185,83 @@ impl Arena {
         super::layers::mark_background(&self.base().clone().upcast());
     }
 }
+
+/// Spielfelder aus `Set Pieces/` (Name = Datei `res://setpieces/<name>.glb`).
+pub const BOARDS: [&str; 9] = ["arena", "burg", "ebene", "gebirge", "inseln", "oedland", "sumpf", "taverne", "wald"];
+
+/// Gewähltes Spielfeld: Argument `--board=`, sonst `CLASH_BOARD`, sonst `property`; `random` =
+/// eines der vorhandenen zufällig. None = prozedurale Kulisse (leer, unbekannt oder Datei fehlt).
+fn chosen_board(property: &str) -> Option<Gd<godot::classes::PackedScene>> {
+    use godot::classes::{Os, ResourceLoader};
+    use godot::obj::Singleton;
+    let args = Os::singleton().get_cmdline_user_args();
+    let from_arg = args.as_slice().iter().find_map(|a| a.to_string().strip_prefix("--board=").map(str::to_string));
+    let name = from_arg
+        .or_else(|| std::env::var("CLASH_BOARD").ok())
+        .unwrap_or_else(|| property.to_string())
+        .trim()
+        .to_ascii_lowercase();
+    if name.is_empty() {
+        return None;
+    }
+    let path = |n: &str| format!("res://setpieces/{n}.glb");
+    let mut loader = ResourceLoader::singleton();
+    let name = if name == "random" {
+        let have: Vec<&str> = BOARDS.iter().copied().filter(|n| loader.exists(&path(n))).collect();
+        if have.is_empty() {
+            return None;
+        }
+        let i = (godot::global::randi() as usize) % have.len();
+        have[i].to_string()
+    } else {
+        name
+    };
+    if !BOARDS.contains(&name.as_str()) || !loader.exists(&path(&name)) {
+        godot_warn!("Spielfeld „{name}“ nicht vorhanden, prozedurale Kulisse");
+        return None;
+    }
+    let scene = loader.load(&path(&name)).and_then(|r| r.try_cast::<godot::classes::PackedScene>().ok());
+    if scene.is_some() {
+        godot_print!("Spielfeld: {name}");
+    }
+    scene
+}
+
+/// Lichter eines Spielfelds für den Tisch einstellen: ohne Schatten (die Karten wirft das
+/// Tischlicht) und Helligkeit wie in Blender gedacht. Godots glTF-Import macht aus Blenders Watt
+/// sehr hohe Energiewerte (≈ 54 je Watt) mit Reichweite 4096; hier wird daraus Energie ≈ Watt/60
+/// und eine Reichweite nach der Stärke (Kerze kurz, Kaminfeuer weit).
+fn tune_board_lights(node: &Gd<Node>) {
+    use godot::classes::light_3d::Param;
+    use godot::classes::{Light3D, OmniLight3D};
+    for child in node.get_children().iter_shared() {
+        if let Ok(mut l) = child.clone().try_cast::<Light3D>() {
+            l.set_shadow(false);
+            let watts = l.get_param(Param::ENERGY) / GLTF_ENERGY_PER_WATT;
+            match l.clone().try_cast::<OmniLight3D>() {
+                Ok(mut o) => {
+                    o.set_param(Param::ENERGY, (watts / WATTS_PER_ENERGY).clamp(0.05, 3.0));
+                    o.set_param(Param::RANGE, (2.5 + watts.sqrt() * 0.7).clamp(2.0, 10.0));
+                }
+                // Hauptlicht (in Blender eine Fläche über dem Tisch, als Spot exportiert)
+                Err(_) => {
+                    // ohne Abfall mit der Entfernung, wie eine große Leuchtfläche über dem Tisch
+                    l.set_param(Param::ENERGY, (watts / MAIN_WATTS_PER_ENERGY).clamp(0.1, 3.0));
+                    l.set_param(Param::RANGE, 60.0);
+                    l.set_param(Param::ATTENUATION, 0.0);
+                }
+            }
+        }
+        tune_board_lights(&child);
+    }
+}
+
+/// Energie je Blender-Watt nach Godots glTF-Import (gemessen: 80 W → 4348).
+const GLTF_ENERGY_PER_WATT: f32 = 54.35;
+/// So viele Blender-Watt ergeben Energie 1 am Tisch (Punktlichter).
+const WATTS_PER_ENERGY: f32 = 60.0;
+/// Dasselbe für das Hauptlicht (Spot aus Blenders Flächenlicht, weit über dem Tisch).
+const MAIN_WATTS_PER_ENERGY: f32 = 4000.0;
 
 /// Gemeinsam genutzte Materialien (Stein triplanar in Weltkoordinaten projiziert).
 struct Materials {

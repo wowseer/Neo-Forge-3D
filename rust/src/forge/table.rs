@@ -356,6 +356,7 @@ impl INode for ForgeTable {
             bridge.connect("bridge_error", &cb("on_bridge_error"));
             bridge.connect("card_info_received", &cb("on_card_info"));
             bridge.connect("look_received", &cb("on_look"));
+            bridge.connect("preload_images", &cb("on_preload_images"));
             // Debug-Fenster (F10), nur in Debug-Builds
             if Os::singleton().is_debug_build() {
                 let mut panel = DebugPanel::new_alloc();
@@ -452,6 +453,8 @@ impl INode for ForgeTable {
                 }
             }
         }
+        // vorgeladene Bilder der Partie: ein paar je Frame (Budget in Millisekunden)
+        placeholder::preload_step(6.0);
         self.update_inspector();
         self.update_divide_positions();
         self.update_seat_tokens(delta as f32);
@@ -1935,6 +1938,14 @@ impl ForgeTable {
             let arr: PackedStringArray = missing.iter().map(|n| GString::from(n.as_str())).collect();
             b.bind_mut().request_card_info(arr);
         }
+    }
+
+    /// Bilder der Partie vorladen (Nachricht `preload_images` der Brücke): kommen in die
+    /// Warteschlange von [`placeholder::queue_preload`] und werden in den nächsten Frames geladen.
+    #[func]
+    fn on_preload_images(&mut self, images: PackedStringArray) {
+        let paths: Vec<String> = images.as_slice().iter().map(|p| p.to_string()).collect();
+        placeholder::queue_preload(paths);
     }
 
     /// Aussehen eines Sitzplatzes vom Gastgeber (NeoForge: Gesicht und Kartenhülle aus

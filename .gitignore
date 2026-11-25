@@ -10,3 +10,6 @@ godot/.godot/
 
 # Temporäre Testskripte (headless)
 /godot/_probe*
+
+# Spielfelder aus "Set Pieces/" (tools/export_setpieces.sh), aus den Blender-Dateien erzeugt
+/godot/setpieces/

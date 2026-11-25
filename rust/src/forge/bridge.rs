@@ -207,6 +207,11 @@ impl ForgeBridge {
     #[signal]
     fn look_received(look: VarDictionary);
 
+    /// Bilddateien der Karten dieser Partie (beider Spieler, auch Bibliothek) zum Vorladen beim
+    /// Start: Kartenbilder und Bildausschnitte, damit beim Ausspielen nichts mehr geladen wird.
+    #[signal]
+    fn preload_images(images: PackedStringArray);
+
     /// Fehler der Brücke oder beim Start (`code` z. B. "deck_not_found", "spawn_failed").
     #[signal]
     fn bridge_error(code: GString, message: GString);
@@ -420,6 +425,14 @@ impl ForgeBridge {
             "state" => self.signals().state_received().emit(&sub("state")),
             "game_over" => self.signals().game_over().emit(&dict),
             "look" => self.signals().look_received().emit(&dict),
+            "preload_images" => {
+                let images: PackedStringArray = msg
+                    .get("images")
+                    .and_then(Value::as_array)
+                    .map(|a| a.iter().filter_map(Value::as_str).map(GString::from).collect())
+                    .unwrap_or_default();
+                self.signals().preload_images().emit(&images);
+            }
             "card_info" => {
                 let cards = msg.get("cards").map(json::to_variant).and_then(|v| v.try_to::<VarArray>().ok()).unwrap_or_default();
                 self.signals().card_info_received().emit(&cards);

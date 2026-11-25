@@ -75,7 +75,17 @@ path (see `tools/neoforge_clash.sh`).
 Settings have their own tab *Settings → 3D table*: "Game table" = **2D table** or **3D table**
 (default: 3D table), and "Graphics quality" = **Low** (default: no SSAO/glow, 3D scene at 75 %
 resolution, smooth on integrated GPUs) or **High** (all effects, full resolution). NeoForge passes
-the quality to the table as `-- --graphics=low|high`. With more than two players the 2D table is
+the quality to the table as `-- --graphics=low|high`. "Battlefield" (drop-down) picks the set
+piece (`--board=`; random, one of the nine battlefields or the classic procedural one; default
+arena). In Adventure duels the battlefield follows where you fight (`NeoDuelBridge.adventureBoard`):
+arena tournaments and events → arena, towns → tavern, castles/capitals/boss places → castle,
+otherwise the terrain (white → plains, green → forest, blue/ocean → islands, black → swamp,
+red → mountains, wastes/deserts → wastes).
+
+**Images:** at the start of a match the bridge sends `preload_images` (all card images and crops
+of both decks) and the table decodes them right away. `tools/neoforge_images.sh` downloads all
+image crops (tiles) and token images into NeoForge's picture folders in advance (NeoForge's own
+"all printings" download only covers the full card images); existing files are skipped. With more than two players the 2D table is
 always used, whatever is chosen there. Without a bundled table the section also shows "Godot program" (Godot 4.7) and
 "Neo Forge 3D project folder" (`godot/` of Neo Forge 3D) for when the start script does not provide
 them. Applies from the next match.

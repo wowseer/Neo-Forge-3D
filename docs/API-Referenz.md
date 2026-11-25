@@ -97,6 +97,7 @@ Verbindung zur Forge-Regel-Engine: startet die Java-Brücke (`forge-bridge/`) al
 | `card_info_received(cards: VarArray)` | Antwort auf `request_card_info()`: Kartendaten (`{name, type, cost, text, power, toughness, image}`) je bekanntem Namen. |
 | `game_over(result: Dictionary)` | Die Partie ist vorbei: `{winner, draw, reason}`. |
 | `look_received(look: Dictionary)` | Aussehen eines Sitzplatzes vom Gastgeber (eingebettet, z. B. NeoForges „Anpassen“): `{seat, portrait, sleeve}` mit Pfaden zu Bilddateien (fehlend = eigenes Aussehen). |
+| `preload_images(images: PackedStringArray)` | Bilddateien der Karten dieser Partie (beider Spieler, auch Bibliothek) zum Vorladen beim Start: Kartenbilder und Bildausschnitte, damit beim Ausspielen nichts mehr geladen wird. |
 | `bridge_error(code: String, message: String)` | Fehler der Brücke oder beim Start (`code` z. B. "deck_not_found", "spawn_failed"). |
 | `bridge_stopped(exit_code: int)` | Der Java-Prozess ist beendet (`exit_code` -1 = unbekannt / von uns beendet). |
 
@@ -166,6 +167,7 @@ Spielt eine Partie mit der Forge-Regel-Engine auf dem 3D-Tisch: Karten, Zonen, K
 | `on_game_over(result: Dictionary)` | `void` | Partie vorbei: Sieger merken (HUD zeigt ihn an). |
 | `on_bridge_error(code: String, message: String)` | `void` | Fehler der Brücke: als Warnung in die Godot-Konsole schreiben. |
 | `on_card_clicked(card: Card3D)` | `void` | Karte angeklickt: bei der Zielwahl = Ziel wählen/abwählen; mit Priorität = Aktion der Karte (nicht aus der Hand – die spielt man durch Ziehen): eine Aktion sofort, mehrere über das Fähigkeiten-Menü. |
+| `on_preload_images(images: PackedStringArray)` | `void` | Bilder der Partie vorladen (Nachricht `preload_images` der Brücke): kommen in die Warteschlange von [`placeholder::queue_preload`] und werden in den nächsten Frames geladen. |
 | `on_look(look: Dictionary)` | `void` | Aussehen eines Sitzplatzes vom Gastgeber (NeoForge: Gesicht und Kartenhülle aus „Anpassen“): das Porträt kommt ins Medaillon, die Hülle auf die Rückseite jeder Karte des Sitzplatzes (auch der schon liegenden). |
 | `on_card_info(cards: VarArray)` | `void` | Antwort auf `card_info`: Kartendaten merken; die Vorschau der Suche neu aufbauen, wenn sich bei ihrer Karte etwas Sichtbares ändert (z. B. das Bild kam). |
 | `on_search_selected(row: int)` | `void` | Zeile `row` der Suchliste gewählt: „Fertig“ wird anklickbar. |
@@ -459,6 +461,7 @@ Arena-Kulisse: Sandstein-Spielbrett mit gemeißeltem, leuchtendem Runenkreis in 
 | `rune_glow` | `float` | Leuchtstärke des Runenkreises (0 = aus). |
 | `player_color` | `Color` | Bannerfarbe der Spielerseite. |
 | `opponent_color` | `Color` | Bannerfarbe der Gegnerseite. |
+| `board` | `String` | Spielfeld aus `res://setpieces/<name>.glb` statt der prozeduralen Kulisse (aus den Blender-Dateien in `Set Pieces/`, `tools/export_setpieces.sh`): `arena`, `burg`, `ebene`, `gebirge`, `inseln`, `oedland`, `sumpf`, `taverne`, `wald`; `random` = eines davon zufällig; leer = prozedurale Kulisse. Vorrang haben das Programmargument `--board=<name>` (nach `--`) und die Umgebungsvariable `CLASH_BOARD` (so wählt NeoForge das Spielfeld). |
 
 ### Funktionen
 
@@ -468,6 +471,7 @@ Arena-Kulisse: Sandstein-Spielbrett mit gemeißeltem, leuchtendem Runenkreis in 
 | `set_board_size(value: Vector2)` | `void` | Setter für `board_size`; baut die Kulisse (verzögert) neu auf, wenn sie schon steht. |
 | `set_texture_resolution(value: float)` | `void` | Setter für `texture_resolution`; baut die Kulisse (verzögert) neu auf, wenn sie schon steht. |
 | `set_rune_glow(value: float)` | `void` | Setter für `rune_glow`; baut die Kulisse (verzögert) neu auf, wenn sie schon steht. |
+| `set_board(value: String)` | `void` | Setter für `board`; baut die Kulisse (verzögert) neu auf, wenn sie schon steht. |
 | `set_player_color(value: Color)` | `void` | Setter für `player_color`; baut die Kulisse (verzögert) neu auf, wenn sie schon steht. |
 | `set_opponent_color(value: Color)` | `void` | Setter für `opponent_color`; baut die Kulisse (verzögert) neu auf, wenn sie schon steht. |
 

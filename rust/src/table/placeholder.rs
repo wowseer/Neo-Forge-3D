@@ -87,6 +87,50 @@ thread_local! {
     static CLOSED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
+thread_local! {
+    /// Vorgeladene Bildausschnitte (dekodiert, für [`tile_face`]) je Pfad.
+    static RAW: RefCell<HashMap<String, Gd<Image>>> = RefCell::new(HashMap::new());
+    /// Warteschlange der Bilder zum Vorladen ([`queue_preload`]).
+    static PRELOAD: RefCell<std::collections::VecDeque<String>> = RefCell::new(std::collections::VecDeque::new());
+}
+
+/// Bilder einer Partie zum Vorladen vormerken (Pfade aus der Nachricht `preload_images`):
+/// [`preload_step`] lädt sie nach und nach, ohne ein Frame lang zu stocken.
+pub fn queue_preload(paths: Vec<String>) {
+    PRELOAD.with(|q| q.borrow_mut().extend(paths));
+}
+
+/// Vorgemerkte Bilder laden, bis `budget_ms` Millisekunden verbraucht sind (einmal je Frame):
+/// Kartenbilder als Textur in den Zwischenspeicher von [`printed_face`], Bildausschnitte
+/// (`.artcrop.`) dekodiert für [`tile_face`]. Danach erscheinen Karten beim Ausspielen sofort.
+pub fn preload_step(budget_ms: f64) {
+    if CLOSED.with(|c| c.get()) || PRELOAD.with(|q| q.borrow().is_empty()) {
+        return;
+    }
+    let start = std::time::Instant::now();
+    while start.elapsed().as_secs_f64() * 1000.0 < budget_ms {
+        let Some(path) = PRELOAD.with(|q| q.borrow_mut().pop_front()) else { break };
+        if path.contains(".artcrop.") {
+            if RAW.with(|r| r.borrow().contains_key(&path)) {
+                continue;
+            }
+            if let Some(img) = Image::load_from_file(&path) {
+                RAW.with(|r| r.borrow_mut().insert(path, img));
+            }
+        } else {
+            printed_face(&path);
+        }
+    }
+}
+
+/// Bild einer Datei: vorgeladen (Kopie, darf verändert werden) oder frisch von der Platte.
+fn load_image(path: &str) -> Option<Gd<Image>> {
+    if let Some(img) = RAW.with(|r| r.borrow().get(path).cloned()) {
+        return Some(img.duplicate_resource());
+    }
+    Image::load_from_file(path)
+}
+
 /// Kartenbild aus einer Datei (JPG/PNG von Scryfall, Pfad aus dem Zustand), einmal geladen und
 /// zwischengespeichert; None, wenn die Datei fehlt oder nicht lesbar ist.
 pub fn printed_face(path: &str) -> Option<Gd<Texture2D>> {
@@ -111,6 +155,8 @@ pub fn clear_printed() {
     CLOSED.with(|c| c.set(true));
     PRINTED.with(|c| c.borrow_mut().clear());
     TILES.with(|c| c.borrow_mut().clear());
+    RAW.with(|c| c.borrow_mut().clear());
+    PRELOAD.with(|c| c.borrow_mut().clear());
     super::card3d::clear_stats_plate_cache();
 }
 
@@ -401,7 +447,7 @@ pub fn tile_face(def: &CardDef) -> Option<Gd<Texture2D>> {
     if let Some(t) = TILES.with(|m| m.borrow().get(&key).cloned()) {
         return Some(t);
     }
-    let mut art = Image::load_from_file(source)?;
+    let mut art = load_image(source)?;
     art.convert(Format::RGBA8);
     if from_full {
         // Bildfeld eines Scryfall-Kartenbilds (normale Karte und Spielstein): unter der Namenszeile,

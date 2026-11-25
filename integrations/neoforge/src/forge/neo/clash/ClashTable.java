@@ -45,6 +45,18 @@ public final class ClashTable {
     public static final String SETTING_GODOT = "clash3d.godot";
     public static final String SETTING_PROJECT = "clash3d.project";
     public static final String SETTING_TABLE = "clash3d.table";
+    /** Spielfeld des Tisches: eines von {@link #BOARDS}, {@link #BOARD_RANDOM} oder {@link #BOARD_CLASSIC}. */
+    public static final String SETTING_BOARD = "clash3d.board";
+    /**
+     * Spielfelder aus „Set Pieces“ des Tisches ({@code res://setpieces/<name>.glb}), in dieser
+     * Reihenfolge im Menü.
+     */
+    public static final List<String> BOARDS = List.of("arena", "burg", "ebene", "gebirge", "inseln",
+            "oedland", "sumpf", "taverne", "wald");
+    /** Jede Partie ein zufälliges Spielfeld. */
+    public static final String BOARD_RANDOM = "random";
+    /** Die bisherige, im Tisch erzeugte Kulisse. */
+    public static final String BOARD_CLASSIC = "classic";
     /** Grafikstufe des Tisches: {@link #GRAPHICS_LOW} (Vorgabe) oder {@link #GRAPHICS_HIGH}. */
     public static final String SETTING_GRAPHICS = "clash3d.graphics";
     /** Sparsam: ohne SSAO und Glow, 3D-Auflösung 75 % (flüssig auf integrierten GPUs). */
@@ -104,6 +116,16 @@ public final class ClashTable {
     public static String graphics() {
         String v = setting("neo.clash.graphics", "CLASH_GRAPHICS", SETTING_GRAPHICS, GRAPHICS_LOW);
         return GRAPHICS_HIGH.equalsIgnoreCase(v) ? GRAPHICS_HIGH : GRAPHICS_LOW;
+    }
+
+    /**
+     * Spielfeld für normale Partien (Einstellung „Spielfeld“, sonst {@code -Dneo.clash.board} /
+     * {@code CLASH_BOARD}, sonst {@code arena}). Im Adventure wählt {@code NeoDuelBridge} nach dem
+     * Gelände.
+     */
+    public static String board() {
+        String v = setting("neo.clash.board", "CLASH_BOARD", SETTING_BOARD, "arena").toLowerCase(java.util.Locale.ROOT);
+        return BOARDS.contains(v) || v.equals(BOARD_RANDOM) || v.equals(BOARD_CLASSIC) ? v : "arena";
     }
 
     /** Godot-Programm (Einstellung, sonst {@code godot} aus dem PATH). */
@@ -306,6 +328,14 @@ public final class ClashTable {
 
     /** Wie {@link #open()}, das Tisch-Fenster öffnet sich bei {@code window} ({@code null} = egal). */
     public static TableLauncher.Session open(TableWindow window) {
+        return open(window, null);
+    }
+
+    /**
+     * Wie {@link #open(TableWindow)} mit dem Spielfeld {@code board} (einer von {@link #BOARDS},
+     * {@link #BOARD_RANDOM}, {@link #BOARD_CLASSIC}; {@code null} = Einstellung {@link #board()}).
+     */
+    public static TableLauncher.Session open(TableWindow window, String board) {
         File log = new File(System.getProperty("java.io.tmpdir"), "neoforge-clash-godot.log");
         TableLauncher.Config config;
         File table = tableProgram();
@@ -325,7 +355,10 @@ public final class ClashTable {
         if (window != null) {
             config = config.withWindow(window);
         }
-        config = config.withTableArgs(List.of("--graphics=" + graphics()));
+        String chosen = board == null ? board() : board;
+        // „classic“: leeres Argument, der Tisch baut seine eigene Kulisse
+        config = config.withTableArgs(List.of("--graphics=" + graphics(),
+                "--board=" + (BOARD_CLASSIC.equals(chosen) ? "" : chosen)));
         try {
             TableLauncher.Session session = TableLauncher.launch(config);
             System.out.println("[clash] Tisch verbunden (" + config.program() + ", Port " + session.port()
@@ -363,6 +396,15 @@ public final class ClashTable {
      */
     public static TableLauncher.Session openForDuel(List<RegisteredPlayer> players, RegisteredPlayer human,
             GameType gameType, Collection<GameType> variants, TableWindow window) {
+        return openForDuel(players, human, gameType, variants, window, null);
+    }
+
+    /**
+     * Wie {@link #openForDuel(List, RegisteredPlayer, GameType, Collection, TableWindow)} mit dem
+     * Spielfeld {@code board} (z. B. nach dem Gelände im Adventure; {@code null} = Einstellung).
+     */
+    public static TableLauncher.Session openForDuel(List<RegisteredPlayer> players, RegisteredPlayer human,
+            GameType gameType, Collection<GameType> variants, TableWindow window, String board) {
         Set<GameType> all = EnumSet.of(gameType);
         if (variants != null) {
             all.addAll(variants);
@@ -370,7 +412,7 @@ public final class ClashTable {
         if (!players.contains(human) || !useFor(players.size() - 1, false, all)) {
             return null;
         }
-        TableLauncher.Session session = open(window);
+        TableLauncher.Session session = open(window, board);
         if (session == null) {
             return null;
         }

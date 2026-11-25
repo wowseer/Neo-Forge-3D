@@ -201,6 +201,7 @@ public final class BridgeCore {
         game.subscribeToEvents(new DebugTools.Refiller(game));
         game.getGameLog().addObserver(new LogForwarder(game));
         send(message("match_started"));
+        CardImages.preloadGame(game);
     }
 
     /** Partie zu Ende: {@code game_over} mit Sieger, Unentschieden und Grund. */
@@ -360,6 +361,7 @@ public final class BridgeCore {
         game.subscribeToEvents(new EventForwarder(game));
         game.subscribeToEvents(new DebugTools.Refiller(game));
         game.getGameLog().addObserver(new LogForwarder(game));
+        CardImages.preloadGame(game);
 
         gameThread = new Thread(() -> runGame(match, game), "forge-game");
         gameThread.setDaemon(true);

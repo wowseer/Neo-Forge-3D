@@ -123,6 +123,68 @@ final class CardImages {
         return new Info(image, art, crop);
     }
 
+    /**
+     * Bilder einer Partie vorab: löst in einem eigenen Faden für alle Karten beider Spieler (Hand,
+     * Bibliothek, Kommandozone, Spielfeld, Friedhof, Exil, Sideboard) Kartenbild und Bildausschnitt
+     * auf – auch der Rückseite doppelseitiger Karten – und schickt die vorhandenen Pfade als
+     * {@code preload_images} an die UI, die sie gleich zu Beginn lädt statt erst beim Ausspielen.
+     * Fehlende Bilder werden dabei im Hintergrund geladen (wie sonst beim ersten Zeigen).
+     */
+    static void preloadGame(forge.game.Game game) {
+        Thread t = new Thread(() -> {
+            // die Bibliotheken füllt Forge erst beim Start der Partie: kurz darauf warten
+            for (int i = 0; i < 100 && game.getPlayers().stream()
+                    .allMatch(p -> p.getCardsIn(forge.game.zone.ZoneType.Library).isEmpty()); i++) {
+                try {
+                    Thread.sleep(100);
+                } catch (InterruptedException e) {
+                    return;
+                }
+            }
+            java.util.LinkedHashSet<String> paths = new java.util.LinkedHashSet<>();
+            java.util.Set<String> seen = new java.util.HashSet<>();
+            forge.game.zone.ZoneType[] zones = {
+                    forge.game.zone.ZoneType.Hand, forge.game.zone.ZoneType.Battlefield,
+                    forge.game.zone.ZoneType.Command, forge.game.zone.ZoneType.Library,
+                    forge.game.zone.ZoneType.Graveyard, forge.game.zone.ZoneType.Exile,
+                    forge.game.zone.ZoneType.Sideboard};
+            try {
+                for (forge.game.player.Player p : game.getPlayers()) {
+                    for (Card c : p.getCardsIn(java.util.Arrays.asList(zones))) {
+                        if (c.isToken() || !(c.getPaperCard() instanceof PaperCard pc)
+                                || !seen.add(pc.getName() + "|" + pc.getEdition() + "|" + pc.getArtIndex())) {
+                            continue;
+                        }
+                        PaperCard shown = DISPLAY.computeIfAbsent(
+                                pc.getName() + "|" + pc.getEdition() + "|" + pc.getArtIndex(), k -> displayPrinting(pc));
+                        List<String> faces = pc.hasBackFace() ? List.of("", "back") : List.of("");
+                        for (String face : faces) {
+                            for (boolean art : new boolean[] {false, true}) {
+                                String path = resolve(shown, face, art);
+                                if (!path.isEmpty()) {
+                                    paths.add(path);
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch (RuntimeException e) {
+                // Vorladen ist nur Komfort: ohne Liste lädt die UI beim ersten Zeigen
+                System.err.println("Kartenbilder vorladen: " + e);
+            }
+            if (paths.isEmpty()) {
+                return;
+            }
+            com.google.gson.JsonObject m = BridgeCore.message("preload_images");
+            com.google.gson.JsonArray a = new com.google.gson.JsonArray();
+            paths.forEach(a::add);
+            m.add("images", a);
+            BridgeCore.send(m);
+        }, "clash-preload-images");
+        t.setDaemon(true);
+        t.start();
+    }
+
     /** Bild (Anzeige-Druck mit normalem Rahmen) einer Karte aus der Kartendatenbank; "" = (noch) keins. */
     static String paperImage(PaperCard pc) {
         if (pc == null) {
