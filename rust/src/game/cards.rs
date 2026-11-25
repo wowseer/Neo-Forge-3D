@@ -107,6 +107,9 @@ pub struct CardDef {
     /// Dungeon (CR 309): Räume und aktueller Raum – die Karte zeigt dann die gezeichnete
     /// Dungeon-Karte (`table::dungeon_view`).
     pub dungeon: Option<crate::game::dungeon::Dungeon>,
+    /// Schlüsselwörter der Karte, wie die Engine sie nennt („Flying“, „First Strike“, „Ward 2“ …):
+    /// Symbole unten an der Kreaturen-Kachel ([`keyword_icons`]), fliegende Kreaturen schweben.
+    pub keywords: Vec<String>,
 }
 
 impl CardDef {
@@ -172,7 +175,22 @@ impl CardDef {
             produces,
             type_line,
             dungeon: crate::game::dungeon::Dungeon::from_card(card),
+            keywords: card
+                .get("keywords")
+                .and_then(|v| v.try_to::<VarArray>().ok())
+                .map(|a| {
+                    a.iter_shared()
+                        .filter_map(|k| k.try_to::<VarDictionary>().ok())
+                        .filter_map(|k| k.get("title").map(|t| t.to_string()))
+                        .collect()
+                })
+                .unwrap_or_default(),
         }
+    }
+
+    /// Hat die Karte Flugfähigkeit (CR 702.9)? Fliegende Kreaturen schweben über dem Spielfeld.
+    pub fn has_flying(&self) -> bool {
+        keyword_icons(&self.keywords).contains(&KeywordIcon::Flying)
     }
 
     /// Rahmenfarbe: Länder nach ihrer Manafarbe, sonst die Kartenfarbe (mehrfarbig = Gold,
@@ -310,3 +328,101 @@ mod tests {
     }
 }
 
+
+/// Schlüsselwort mit eigenem Symbol unten an der Kreaturen-Kachel (wie in Arena; die Symbole sind
+/// eigene Zeichnungen, `table::cost_symbols::draw_keyword`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum KeywordIcon {
+    Flying,
+    FirstStrike,
+    DoubleStrike,
+    Deathtouch,
+    Menace,
+    Trample,
+    Vigilance,
+    Lifelink,
+    Reach,
+    Haste,
+    Hexproof,
+    Ward,
+    Indestructible,
+    Defender,
+}
+
+impl KeywordIcon {
+    /// Kennung im Symbol-Token (`&flying` …).
+    pub fn id(self) -> &'static str {
+        match self {
+            Self::Flying => "flying",
+            Self::FirstStrike => "first_strike",
+            Self::DoubleStrike => "double_strike",
+            Self::Deathtouch => "deathtouch",
+            Self::Menace => "menace",
+            Self::Trample => "trample",
+            Self::Vigilance => "vigilance",
+            Self::Lifelink => "lifelink",
+            Self::Reach => "reach",
+            Self::Haste => "haste",
+            Self::Hexproof => "hexproof",
+            Self::Ward => "ward",
+            Self::Indestructible => "indestructible",
+            Self::Defender => "defender",
+        }
+    }
+}
+
+/// Symbole zu den Schlüsselwörtern `keywords` (Namen der Engine), in fester Reihenfolge und ohne
+/// Dubletten. Doppelschlag schließt Erstschlag ein (CR 702.4b), dann nur das Doppelschlag-Symbol.
+pub fn keyword_icons(keywords: &[String]) -> Vec<KeywordIcon> {
+    use KeywordIcon::*;
+    const ORDER: [(KeywordIcon, &str); 14] = [
+        (Flying, "flying"),
+        (DoubleStrike, "double strike"),
+        (FirstStrike, "first strike"),
+        (Deathtouch, "deathtouch"),
+        (Menace, "menace"),
+        (Trample, "trample"),
+        (Vigilance, "vigilance"),
+        (Lifelink, "lifelink"),
+        (Reach, "reach"),
+        (Haste, "haste"),
+        (Hexproof, "hexproof"),
+        (Ward, "ward"),
+        (Indestructible, "indestructible"),
+        (Defender, "defender"),
+    ];
+    let lower: Vec<String> = keywords.iter().map(|k| k.trim().to_lowercase()).collect();
+    let has = |name: &str| lower.iter().any(|k| k == name || k.starts_with(&format!("{name} ")) || k.starts_with(&format!("{name}:")));
+    let mut out: Vec<KeywordIcon> = ORDER.iter().filter(|(_, n)| has(n)).map(|(i, _)| *i).collect();
+    if out.contains(&DoubleStrike) {
+        out.retain(|i| *i != FirstStrike);
+    }
+    out
+}
+
+#[cfg(test)]
+mod keyword_tests {
+    use super::*;
+
+    fn kw(v: &[&str]) -> Vec<String> {
+        v.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn icons_in_fixed_order_without_duplicates() {
+        let icons = keyword_icons(&kw(&["Menace", "Flying", "Deathtouch", "Flying"]));
+        assert_eq!(icons, vec![KeywordIcon::Flying, KeywordIcon::Deathtouch, KeywordIcon::Menace]);
+    }
+
+    #[test]
+    fn double_strike_replaces_first_strike() {
+        let icons = keyword_icons(&kw(&["First Strike", "Double Strike"]));
+        assert_eq!(icons, vec![KeywordIcon::DoubleStrike]);
+    }
+
+    #[test]
+    fn keywords_with_parameters() {
+        let icons = keyword_icons(&kw(&["Ward 2", "Hexproof from black", "Trample over planeswalkers", "Flash"]));
+        assert_eq!(icons, vec![KeywordIcon::Trample, KeywordIcon::Hexproof, KeywordIcon::Ward]);
+    }
+}

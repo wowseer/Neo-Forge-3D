@@ -70,6 +70,11 @@ impl IControl for CostSymbolCanvas {
             draw_seat_token(&mut b, kind, count.parse().unwrap_or(0), size);
             return;
         }
+        // Schlüsselwort-Symbol unten an der Kreaturen-Kachel („&flying“ …, [`keyword_icon`])
+        if let Some(kind) = token.strip_prefix('&') {
+            draw_keyword(&mut b, kind, size);
+            return;
+        }
         // Loyalität (CR 306.5, 606): Schild bzw. Kosten-Symbol einer Loyalitätsfähigkeit
         if let Some(rest) = token.strip_prefix('%') {
             let (kind, value) = rest.split_once(':').unwrap_or((rest, ""));
@@ -164,6 +169,150 @@ fn draw_loyalty(b: &mut godot::classes::CanvasItem, kind: &str, value: &str, siz
         .font_size(font_size)
         .modulate(ink)
         .done();
+}
+
+/// Schlüsselwort-Symbol zeichnen (eigene Zeichnung, nicht aus Arena): dunkle Scheibe mit hellem
+/// Rand, darauf eine weiße Figur je Schlüsselwort (`kind` = [`KeywordIcon::id`]): Flügel (Flugfähigkeit),
+/// Schwert (Erstschlag), zwei gekreuzte Schwerter (Doppelschlag), Totenkopf (Todesberührung),
+/// gehörnter Kopf (Bedrohlich), Pfeil (Trampelschaden), Auge (Wachsamkeit), Herz
+/// (Lebensverknüpfung), Pfeil mit Bogen (Reichweite), Blitz (Eile), Schild (Fluchsicher), Schild
+/// mit Punkt (Abwehr), Diamant (Unzerstörbar), Mauer (Verteidiger).
+///
+/// [`KeywordIcon::id`]: crate::game::cards::KeywordIcon::id
+fn draw_keyword(b: &mut godot::classes::CanvasItem, kind: &str, size: f32) {
+    use std::f32::consts::{PI, TAU};
+    let pt = |x: f32, y: f32| Vector2::new(x * size, y * size);
+    let poly = |v: &[(f32, f32)]| -> PackedVector2Array { v.iter().map(|&(x, y)| pt(x, y)).collect() };
+    let ink = Color::from_rgb(0.97, 0.97, 0.96);
+    let dark = Color::from_rgb(0.09, 0.09, 0.11);
+    let c = pt(0.5, 0.5);
+    let r = size * 0.44;
+    // Scheibe: Schatten, heller Rand, dunkle Füllung
+    b.draw_circle(c + Vector2::new(0.0, size * 0.03), r + size * 0.02, Color::from_rgba(0.0, 0.0, 0.0, 0.5));
+    b.draw_circle(c, r, Color::from_rgb(0.88, 0.86, 0.8));
+    b.draw_circle(c, r - size * 0.05, dark);
+    // Schwert (senkrecht, Spitze oben) um die Mitte gedreht um `angle`
+    let sword = |b: &mut godot::classes::CanvasItem, angle: f32, scale: f32| {
+        let (sn, cs) = angle.sin_cos();
+        let tf = |x: f32, y: f32| {
+            let (dx, dy) = ((x - 0.5) * scale, (y - 0.5) * scale);
+            pt(0.5 + dx * cs - dy * sn, 0.5 + dx * sn + dy * cs)
+        };
+        let shape = |v: &[(f32, f32)]| -> PackedVector2Array { v.iter().map(|&(x, y)| tf(x, y)).collect() };
+        b.draw_colored_polygon(&shape(&[(0.5, 0.14), (0.565, 0.25), (0.565, 0.62), (0.435, 0.62), (0.435, 0.25)]), ink);
+        b.draw_colored_polygon(&shape(&[(0.33, 0.62), (0.67, 0.62), (0.67, 0.68), (0.33, 0.68)]), ink);
+        b.draw_colored_polygon(&shape(&[(0.47, 0.68), (0.53, 0.68), (0.53, 0.8), (0.47, 0.8)]), ink);
+        b.draw_circle(tf(0.5, 0.835), size * 0.045 * scale, ink);
+    };
+    match kind {
+        "flying" => {
+            b.draw_colored_polygon(
+                &poly(&[
+                    (0.2, 0.66), (0.26, 0.44), (0.4, 0.3), (0.62, 0.21), (0.82, 0.2), (0.7, 0.3),
+                    (0.82, 0.32), (0.66, 0.42), (0.76, 0.45), (0.58, 0.54), (0.64, 0.58), (0.42, 0.64),
+                ]),
+                ink,
+            );
+        }
+        "first_strike" => sword(b, 0.0, 1.0),
+        "double_strike" => {
+            sword(b, -0.5, 0.92);
+            sword(b, 0.5, 0.92);
+        }
+        "deathtouch" => {
+            b.draw_circle(pt(0.5, 0.44), size * 0.22, ink);
+            b.draw_colored_polygon(&poly(&[(0.37, 0.55), (0.63, 0.55), (0.6, 0.74), (0.4, 0.74)]), ink);
+            b.draw_circle(pt(0.41, 0.46), size * 0.065, dark);
+            b.draw_circle(pt(0.59, 0.46), size * 0.065, dark);
+            b.draw_colored_polygon(&poly(&[(0.5, 0.53), (0.535, 0.6), (0.465, 0.6)]), dark);
+            for x in [0.45, 0.5, 0.55] {
+                b.draw_colored_polygon(&poly(&[(x - 0.008, 0.66), (x + 0.008, 0.66), (x + 0.008, 0.74), (x - 0.008, 0.74)]), dark);
+            }
+        }
+        "menace" => {
+            b.draw_colored_polygon(&poly(&[(0.34, 0.5), (0.2, 0.2), (0.44, 0.42)]), ink);
+            b.draw_colored_polygon(&poly(&[(0.66, 0.5), (0.8, 0.2), (0.56, 0.42)]), ink);
+            b.draw_circle(pt(0.5, 0.58), size * 0.21, ink);
+            b.draw_colored_polygon(&poly(&[(0.35, 0.52), (0.47, 0.58), (0.45, 0.62), (0.36, 0.58)]), dark);
+            b.draw_colored_polygon(&poly(&[(0.65, 0.52), (0.53, 0.58), (0.55, 0.62), (0.64, 0.58)]), dark);
+            b.draw_colored_polygon(&poly(&[(0.42, 0.7), (0.58, 0.7), (0.56, 0.73), (0.44, 0.73)]), dark);
+        }
+        "trample" => {
+            b.draw_colored_polygon(
+                &poly(&[(0.18, 0.42), (0.54, 0.42), (0.54, 0.28), (0.82, 0.5), (0.54, 0.72), (0.54, 0.58), (0.18, 0.58)]),
+                ink,
+            );
+        }
+        "vigilance" => {
+            let n = 20;
+            let mut lens = PackedVector2Array::new();
+            for i in 0..=n {
+                let t = i as f32 / n as f32;
+                lens.push(pt(0.18 + 0.64 * t, 0.5 - 0.2 * (PI * t).sin()));
+            }
+            for i in (1..n).rev() {
+                let t = i as f32 / n as f32;
+                lens.push(pt(0.18 + 0.64 * t, 0.5 + 0.2 * (PI * t).sin()));
+            }
+            b.draw_colored_polygon(&lens, ink);
+            b.draw_circle(c, size * 0.12, dark);
+            b.draw_circle(c, size * 0.045, ink);
+        }
+        "lifelink" => {
+            b.draw_circle(pt(0.39, 0.42), size * 0.125, ink);
+            b.draw_circle(pt(0.61, 0.42), size * 0.125, ink);
+            b.draw_colored_polygon(&poly(&[(0.275, 0.47), (0.725, 0.47), (0.5, 0.77)]), ink);
+        }
+        "reach" => {
+            b.draw_arc_ex(pt(0.5, 0.72), size * 0.27, PI * 1.12, PI * 1.88, 24, ink).width(size * 0.055).antialiased(true).done();
+            b.draw_colored_polygon(
+                &poly(&[(0.5, 0.15), (0.63, 0.33), (0.54, 0.33), (0.54, 0.82), (0.46, 0.82), (0.46, 0.33), (0.37, 0.33)]),
+                ink,
+            );
+        }
+        "haste" => {
+            b.draw_colored_polygon(
+                &poly(&[(0.58, 0.14), (0.3, 0.55), (0.48, 0.55), (0.4, 0.86), (0.7, 0.43), (0.52, 0.43), (0.64, 0.14)]),
+                ink,
+            );
+        }
+        "hexproof" | "ward" => {
+            let shield = [(0.24, 0.22), (0.5, 0.15), (0.76, 0.22), (0.74, 0.52), (0.5, 0.85), (0.26, 0.52)];
+            b.draw_colored_polygon(&poly(&shield), ink);
+            let inner: Vec<(f32, f32)> = shield.iter().map(|&(x, y)| (0.5 + (x - 0.5) * 0.7, 0.49 + (y - 0.49) * 0.7)).collect();
+            b.draw_colored_polygon(&poly(&inner), dark);
+            if kind == "ward" {
+                b.draw_circle(pt(0.5, 0.47), size * 0.08, ink);
+            }
+        }
+        "indestructible" => {
+            b.draw_colored_polygon(&poly(&[(0.5, 0.16), (0.8, 0.44), (0.5, 0.84), (0.2, 0.44)]), ink);
+            b.draw_colored_polygon(&poly(&[(0.5, 0.3), (0.64, 0.44), (0.5, 0.64), (0.36, 0.44)]), dark);
+        }
+        "defender" => {
+            // Mauer: drei Reihen Steine, versetzt
+            let (x0, x1) = (0.2f32, 0.8f32);
+            for (row, y) in [0.28f32, 0.45, 0.62].into_iter().enumerate() {
+                let offset = if row % 2 == 0 { 0.0 } else { 0.1 };
+                let mut x = x0 - offset;
+                while x < x1 {
+                    let (a, e) = (x.max(x0), (x + 0.19).min(x1));
+                    if e - a > 0.03 {
+                        b.draw_colored_polygon(&poly(&[(a, y), (e, y), (e, y + 0.14), (a, y + 0.14)]), ink);
+                    }
+                    x += 0.2;
+                }
+            }
+        }
+        _ => {
+            b.draw_arc_ex(c, size * 0.2, 0.0, TAU, 24, ink).width(size * 0.05).antialiased(true).done();
+        }
+    }
+}
+
+/// Schlüsselwort-Symbol als `Sprite3D` (Durchmesser `size`, Fläche in der XY-Ebene, Vorderseite +Z).
+pub fn keyword_icon(icon: crate::game::cards::KeywordIcon, size: f32) -> Gd<Sprite3D> {
+    symbol_sprite(&format!("&{}", icon.id()), size)
 }
 
 /// Ist `kind` ein Kennzeichen (Monarch, Initiative, Stadtsegen, Ring) statt einer Spieler-Marke?
@@ -375,7 +524,7 @@ thread_local! {
 /// `SubViewport` hängt unsichtbar an der Wurzel des Szenenbaums.
 pub fn symbol_texture(token: &str) -> Option<Gd<Texture2D>> {
     // Symbolbogen (`game::mana_symbols`) für alle Manasymbole, Zahlen, X, Hybride …
-    if !token.starts_with('#') {
+    if !token.starts_with('#') && !token.starts_with('&') {
         if let Some(t) = crate::game::mana_symbols::texture(token) {
             return Some(t);
         }
@@ -386,7 +535,7 @@ pub fn symbol_texture(token: &str) -> Option<Gd<Texture2D>> {
     let tree = Engine::singleton().get_main_loop()?.try_cast::<SceneTree>().ok()?;
     let mut root = tree.get_root();
     let mut vp = SubViewport::new_alloc();
-    vp.set_name(&format!("CostSymbol_{}", token.replace(['/', '#', ':', '%', '+', '§'], "_")));
+    vp.set_name(&format!("CostSymbol_{}", token.replace(['/', '#', ':', '%', '+', '§', '&'], "_")));
     vp.set_size(Vector2i::new(TEX, TEX));
     vp.set_transparent_background(true);
     vp.set_disable_3d(true);

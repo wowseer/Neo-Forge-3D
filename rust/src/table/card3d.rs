@@ -37,7 +37,7 @@ use godot::classes::Label3D;
 use godot::global::HorizontalAlignment;
 
 use crate::game::card_text;
-use crate::game::cards::{CardDef, CardKind};
+use crate::game::cards::{keyword_icons, CardDef, CardKind, KeywordIcon};
 use crate::game::mana::ManaType;
 use super::placeholder;
 use super::layers::CARD_LAYER;
@@ -54,6 +54,18 @@ const COIN_SIZE: f32 = 0.2;
 const COIN_POP_TIME: f32 = 0.5;
 /// Loyalitäts-Schild: Höhe (m) und Dauer des Aufblitzens bei einer Änderung (Sekunden).
 const SHIELD_SIZE: f32 = 0.27;
+/// Schlüsselwort-Symbole unten an der Kreaturen-Kachel: Durchmesser, höchstens so breit wie
+/// dieser Anteil der Karte (sonst werden sie kleiner).
+const KEYWORD_SIZE: f32 = 0.12;
+const KEYWORD_ROW_MAX: f32 = 0.9;
+/// Oberkante der unteren Leiste der Kachel (Texturpixel, `placeholder::tile_face`): darüber sitzt
+/// die Symbolreihe.
+const KEYWORD_ROW_BOTTOM_PX: f32 = 183.0;
+/// Fliegende Kreaturen (wie in Arena) schweben über dem Spielfeld: Höhe über dem Tisch und sanftes
+/// Auf und Ab (Höhe, Kreisfrequenz rad/s).
+const FLY_LIFT: f32 = 0.09;
+const FLY_BOB: f32 = 0.02;
+const FLY_BOB_SPEED: f32 = 2.1;
 const SHIELD_FLASH_TIME: f32 = 0.6;
 pub const CARD_HEIGHT: f32 = 0.88;
 pub const CARD_THICKNESS: f32 = 0.006;
@@ -329,6 +341,12 @@ pub struct Card3D {
     /// Loyalitäts-Schild eines Planeswalkers auf dem Spielfeld (wie in Arena unten mittig an der
     /// Kachel): Loyalität, Schild, Zeit seit der letzten Änderung (Aufblitzen; ≥ SHIELD_FLASH_TIME = ruhig).
     shield: Option<(i32, Gd<godot::classes::Sprite3D>, f32)>,
+    /// Schlüsselwort-Symbole unten an der Kreaturen-Kachel (Flugfähigkeit, Todesberührung …):
+    /// gezeigte Symbole und ihre Reihe.
+    keyword_row: Option<(Vec<KeywordIcon>, Gd<Node3D>)>,
+    /// Kreatur mit Flugfähigkeit: schwebt als Kachel über dem Spielfeld; Zeit für das Auf und Ab.
+    flies: bool,
+    fly_t: f32,
     /// Kachel-Textur für das Spielfeld (`placeholder::tile_face`), sonst None (dann der obere
     /// Teil der Vorderseite).
     tile_texture: Option<Gd<Texture2D>>,
@@ -424,6 +442,9 @@ impl IArea3D for Card3D {
             tile_texture: None,
             coins: Vec::new(),
             shield: None,
+            keyword_row: None,
+            flies: false,
+            fly_t: 0.0,
             base,
         }
     }
@@ -465,6 +486,14 @@ impl IArea3D for Card3D {
         } else {
             Transform3D::new(self.turn_basis(), Vector3::ZERO)
         };
+        // Fliegende Kreatur auf dem Spielfeld: schwebt (der Schatten bleibt auf dem Tisch) und
+        // wippt sanft; jede Karte in eigenem Takt
+        let mut target = target;
+        if self.flies && self.tile_shown && !self.dragging && !zoomed && !self.def.face_down {
+            self.fly_t = (self.fly_t + delta as f32) % (std::f32::consts::TAU / FLY_BOB_SPEED * 100.0);
+            let phase = (self.base().instance_id().to_i64().rem_euclid(997)) as f32 * 0.37;
+            target.origin.y += FLY_LIFT + FLY_BOB * (self.fly_t * FLY_BOB_SPEED + phase).sin();
+        }
 
         if zoomed != self.zoomed {
             self.zoomed = zoomed;
@@ -793,6 +822,15 @@ impl Card3D {
         self.zoom_enabled = zoom;
     }
 
+    /// Kartendaten im Format des Protokolls übernehmen (Felder wie im Zustand der Brücke: `name`,
+    /// `type`, `power`, `toughness`, `keywords` …, siehe `CardDef::from_state`) – für Testszenen
+    /// und Werkzeuge ohne laufende Partie.
+    #[func]
+    pub fn apply_card_state(&mut self, data: VarDictionary) {
+        let def = CardDef::from_state(&data);
+        self.apply_def(&def);
+    }
+
     /// Wird die Karte als Kachel gezeigt?
     #[func]
     pub fn is_tile(&self) -> bool {
@@ -865,8 +903,10 @@ impl Card3D {
         if self.tile_shown {
             self.apply_face_material();
         }
+        self.flies = def.kind == CardKind::Creature && def.has_flying();
         self.refresh_labels();
         self.sync_shield();
+        self.sync_keywords();
     }
 
     /// Name der Karte (wie auf dem Kartenbild, ohne Übersetzung).
@@ -1045,6 +1085,7 @@ impl Card3D {
         }
         self.refresh_labels();
         self.sync_shield();
+        self.sync_keywords();
         self.update_coins(0.0);
     }
 
@@ -1304,6 +1345,53 @@ impl Card3D {
         let glow = if p < 1.0 { 1.0 - p } else { 0.0 };
         sprite.set_modulate(Color::WHITE.lerp(Color::from_rgb(1.6, 1.5, 1.1), f64::from(glow)));
         sprite.set_position(Vector3::new(0.0, CARD_THICKNESS * 0.5 + 0.008, len * 0.5 - SHIELD_SIZE * 0.15));
+    }
+
+    /// Schlüsselwort-Symbole (wie in Arena) unten an der Kreaturen-Kachel: eine Reihe eigener
+    /// Symbole ([`cost_symbols::keyword_icon`]) mittig über der unteren Leiste, nur als Kachel auf
+    /// dem Spielfeld und nur bei offenen Kreaturen. Baut die Reihe neu, wenn sich die Symbole ändern.
+    fn sync_keywords(&mut self) {
+        let want: Vec<KeywordIcon> = if self.tile_shown && self.def.kind == CardKind::Creature && !self.def.face_down {
+            keyword_icons(&self.def.keywords)
+        } else {
+            Vec::new()
+        };
+        if self.keyword_row.as_ref().map_or(want.is_empty(), |(icons, _)| *icons == want) {
+            self.place_keywords();
+            return;
+        }
+        if let Some((_, mut row)) = self.keyword_row.take() {
+            row.queue_free();
+        }
+        if want.is_empty() {
+            return;
+        }
+        let Some(mut visual) = self.visual.clone() else { return };
+        let n = want.len() as f32;
+        let gap = 0.12;
+        let full = n * KEYWORD_SIZE + (n - 1.0) * KEYWORD_SIZE * gap;
+        let size = if full > CARD_WIDTH * KEYWORD_ROW_MAX { KEYWORD_SIZE * CARD_WIDTH * KEYWORD_ROW_MAX / full } else { KEYWORD_SIZE };
+        let width = n * size + (n - 1.0) * size * gap;
+        let mut row = Node3D::new_alloc();
+        row.set_name("KeywordRow");
+        for (i, icon) in want.iter().enumerate() {
+            let mut sprite = cost_symbols::keyword_icon(*icon, size);
+            sprite.set_position(Vector3::new(-width * 0.5 + size * 0.5 + i as f32 * size * (1.0 + gap), 0.0, 0.0));
+            row.add_child(&sprite);
+        }
+        row.set_rotation(Vector3::new(-std::f32::consts::FRAC_PI_2, 0.0, 0.0));
+        row.set_meta("size", &size.to_variant());
+        visual.add_child(&row);
+        self.keyword_row = Some((want, row));
+        self.place_keywords();
+    }
+
+    /// Symbolreihe mittig direkt über der unteren Leiste der Kachel platzieren.
+    fn place_keywords(&mut self) {
+        let bottom = self.px_z(KEYWORD_ROW_BOTTOM_PX);
+        let Some((_, row)) = self.keyword_row.as_mut() else { return };
+        let size = row.get_meta("size").try_to::<f32>().unwrap_or(KEYWORD_SIZE);
+        row.set_position(Vector3::new(0.0, CARD_THICKNESS * 0.5 + 0.007, bottom - size * 0.5 - 0.006));
     }
 
     pub fn set_badges(&mut self, text: &str) {

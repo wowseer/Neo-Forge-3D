@@ -390,6 +390,17 @@ public final class ClashTable {
      * geschrieben. Nach dem Aufstellen der Spieler aufrufen (Sitzplatz = Index in {@code players}).
      */
     public static void sendLook(List<RegisteredPlayer> players) {
+        sendLook(players, null);
+    }
+
+    /**
+     * Wie {@link #sendLook(List)}, aber mit eigenem Gesicht für Gegner: {@code opponentFace} gibt zu
+     * einem Gegner eine Bilddatei (z. B. die Figur des Adventure-Gegners, {@code NeoDuelBridge}) oder
+     * {@code null}, dann gilt die Regel des 2D-Tisches ({@link #opponentFace}). {@code opponentFace}
+     * darf {@code null} sein.
+     */
+    public static void sendLook(List<RegisteredPlayer> players,
+            java.util.function.Function<LobbyPlayer, File> opponentFace) {
         File dir = new File(System.getProperty("java.io.tmpdir"), "neoforge-clash-look");
         // Bilder der vorigen Partie weg (immer nur eine Partie am Tisch)
         File[] old = dir.listFiles();
@@ -414,7 +425,9 @@ public final class ClashTable {
                     forge.neo.look.LookItem own = custom == null ? null : forge.neo.look.NeoLook.sleeveById(custom);
                     sleeve = own != null ? own : forge.neo.look.NeoLook.builtInSleeve(lp.getSleeveIndex());
                 }
-                String facePath = lookFile(face, dir, "face-" + seat + "-" + stamp);
+                File ownFace = ClashBridge.isRemote(lp) || opponentFace == null ? null : opponentFace.apply(lp);
+                String facePath = ownFace != null && ownFace.isFile() ? ownFace.getAbsolutePath()
+                        : lookFile(face, dir, "face-" + seat + "-" + stamp);
                 String sleevePath = lookFile(sleeve, dir, "sleeve-" + seat + "-" + stamp);
                 System.out.println("[clash] Aussehen Sitz " + seat + ": Gesicht " + facePath + ", Hülle " + sleevePath);
                 ClashBridge.sendLook(seat, facePath, sleevePath);

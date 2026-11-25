@@ -559,6 +559,7 @@ Eine Spielkarte auf dem 3D-Tisch: Mesh mit Vorder-/Rückseite und Beschriftung, 
 | `set_tile(tile: bool)` | `void` | Kachel-Form (Spielfeld): nur Name und Bild, Stärke/Widerstand unten rechts; beim Zoomen und Ziehen wird die ganze Karte gezeigt. Setzt die Zone beim Anordnen. |
 | `set_bright(bright: bool)` | `void` | Immer hell in Originalfarben zeigen (Karten auf einer 3D-Bühne vor der Kamera). |
 | `set_zoom(zoom: bool)` | `void` | Beim Hovern selbst groß vor die Kamera holen (Hand) – setzt die Zone beim Anordnen. |
+| `apply_card_state(data: Dictionary)` | `void` | Kartendaten im Format des Protokolls übernehmen (Felder wie im Zustand der Brücke: `name`, `type`, `power`, `toughness`, `keywords` …, siehe `CardDef::from_state`) – für Testszenen und Werkzeuge ohne laufende Partie. |
 | `is_tile()` | `bool` | Wird die Karte als Kachel gezeigt? |
 | `is_attacking()` | `bool` | Ist die Karte als Angreifer markiert (vorgerückt, mit Angriffsspitze)? |
 | `lunge(target: Vector3, reach: float, delay: float)` | `void` | Schlag im Kampf: die Karte holt zum Weltpunkt `target` aus (Anteil `reach` des Wegs, angehoben), trifft nach [`LUNGE_OUT`] Sekunden und kehrt zurück; Start nach `delay`. |

@@ -95,7 +95,9 @@ If the table does not connect within 2 minutes, NeoForge plays with its own tabl
 **Look from *Customise*:** your seat shows your face from *Customise* in its medallion and your
 card sleeve on the backs of your cards (the deck's sleeve if it has one, as on NeoForge's own
 table); the opponent gets the same face as on NeoForge's 2D table (*Customise → Rivals*, otherwise the
-Forge avatar the engine assigns, so it is the same every match) and the sleeve NeoForge gives that
+Forge avatar the engine assigns, so it is the same every match); in Adventure duels the enemy's own
+sprite from the map instead (`NeoDuelBridge.adventureFace`: cut from the enemy's sprite atlas, scaled
+up pixel-sharp, passed via `ClashTable.sendLook(players, opponentFace)`) and the sleeve NeoForge gives that
 rival (*Customise → Rivals*, otherwise the engine's). `ClashTable.sendLook`, called by `NeoGame`
 and `NeoDuelBridge` once the seats are set; images from Forge's sprite sheets are written as PNG to
 `<tmp>/neoforge-clash-look/`.

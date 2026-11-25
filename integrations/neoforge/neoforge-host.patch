@@ -16,10 +16,10 @@ index d139c09..11901f9 100644
                  banner("PHASE 2 - JavaFX interface");
                  // Los textos del motor, antes de construir NeoApp: hay campos
 diff --git a/forge-gui-neo/src/main/java/forge/neo/adventure/NeoDuelBridge.java b/forge-gui-neo/src/main/java/forge/neo/adventure/NeoDuelBridge.java
-index 9f82385..299693a 100644
+index 9f82385..55d26f6 100644
 --- a/forge-gui-neo/src/main/java/forge/neo/adventure/NeoDuelBridge.java
 +++ b/forge-gui-neo/src/main/java/forge/neo/adventure/NeoDuelBridge.java
-@@ -76,56 +76,114 @@ public final class NeoDuelBridge {
+@@ -76,56 +76,178 @@ public final class NeoDuelBridge {
          };
          NeoWindow.takeOver();
  
@@ -43,6 +43,69 @@ index 9f82385..299693a 100644
 +        }, "neo-adventure-start");
 +        opener.setDaemon(true);
 +        opener.start();
++    }
++
++    /**
++     * Neo Forge 3D: Bild des Adventure-Gegners {@code lp} als PNG fuer das Emblem am 3D-Tisch, oder
++     * {@code null} (dann das Gesicht wie am 2D-Tisch).
++     *
++     * <p>DuelScene legt die Figur jedes Gegners unter seinem Avatar-Index (ab 90001) in
++     * {@code FSkin.getAvatars()} ab: ein Ausschnitt aus dem Sprite-Atlas des Gegners, gespiegelt (er
++     * schaut nach links, wie im Adventure). Ausgeschnitten wird aus der Bilddatei des Atlas (ImageIO),
++     * nicht von der Grafikkarte: das geht in jedem Faden, ohne den von libGDX.
++     */
++    private static java.io.File adventureFace(final forge.LobbyPlayer lp) {
++        final int index = lp.getAvatarIndex();
++        if (index < 90001) {
++            return null;
++        }
++        try {
++            final com.badlogic.gdx.graphics.g2d.TextureRegion region = forge.assets.FSkin.getAvatars().get(index);
++            if (region == null || region.getTexture() == null
++                    || !(region.getTexture().getTextureData()
++                            instanceof com.badlogic.gdx.graphics.glutils.FileTextureData data)) {
++                return null;
++            }
++            final java.awt.image.BufferedImage sheet;
++            try (java.io.InputStream in = data.getFileHandle().read()) {
++                sheet = javax.imageio.ImageIO.read(in);
++            }
++            if (sheet == null) {
++                return null;
++            }
++            final int x = Math.round(Math.min(region.getU(), region.getU2()) * sheet.getWidth());
++            final int y = Math.round(Math.min(region.getV(), region.getV2()) * sheet.getHeight());
++            final int w = Math.min(Math.round(Math.abs(region.getU2() - region.getU()) * sheet.getWidth()),
++                    sheet.getWidth() - x);
++            final int h = Math.min(Math.round(Math.abs(region.getV2() - region.getV()) * sheet.getHeight()),
++                    sheet.getHeight() - y);
++            if (w <= 0 || h <= 0) {
++                return null;
++            }
++            final boolean flipX = region.isFlipX();
++            final boolean flipY = region.isFlipY();
++            // Pixelgrafik: ganzzahlig auf mindestens 256 px vergroessern (scharfe Pixel statt
++            // verwaschen, wenn der Tisch das kleine Bild aufs Emblem zieht)
++            final int k = Math.max(1, (256 + Math.max(w, h) - 1) / Math.max(w, h));
++            final java.awt.image.BufferedImage out =
++                    new java.awt.image.BufferedImage(w * k, h * k, java.awt.image.BufferedImage.TYPE_INT_ARGB);
++            for (int j = 0; j < h * k; j++) {
++                for (int i = 0; i < w * k; i++) {
++                    final int sx = flipX ? w - 1 - i / k : i / k;
++                    final int sy = flipY ? h - 1 - j / k : j / k;
++                    out.setRGB(i, j, sheet.getRGB(x + sx, y + sy));
++                }
++            }
++            final java.io.File dir = new java.io.File(System.getProperty("java.io.tmpdir"), "neoforge-clash-adventure");
++            dir.mkdirs();
++            final java.io.File file = new java.io.File(dir, "enemy-" + index + ".png");
++            javax.imageio.ImageIO.write(out, "png", file);
++            log("3D-Tisch: Bild des Gegners " + lp.getName() + " (" + w + "x" + h + ") -> " + file);
++            return file;
++        } catch (final Exception e) {
++            log("3D-Tisch: Bild des Gegners " + lp.getName() + " nicht verfuegbar: " + e);
++            return null;
++        }
 +    }
 +
 +    /**
@@ -117,8 +180,9 @@ index 9f82385..299693a 100644
 +                match.setStartGameHook(SafeAi.hook(match, null));
 +                snapshotLater(gui); // antes: startMatch no vuelve hasta que acaba el duelo
 +                if (table3d != null) {
-+                    // Neo Forge 3D: Gesicht und Kartenhuelle aus Anpassen an den 3D-Tisch
-+                    forge.neo.clash.ClashTable.sendLook(players);
++                    // Neo Forge 3D: Gesicht und Kartenhuelle aus Anpassen an den 3D-Tisch; Gegner
++                    // mit der Figur, gegen die man im Adventure kaempft (adventureFace)
++                    forge.neo.clash.ClashTable.sendLook(players, NeoDuelBridge::adventureFace);
 +                    // Neo Forge 3D: kein Mensch in der Partie, HostedMatch holt sich die
 +                    // Zuschauer-Oberflaeche von der Plattform (wie NeoGame mit dem 3D-Tisch).
 +                    forge.neo.platform.NeoGuiBase.setGuiGameFactory(() -> gui);
