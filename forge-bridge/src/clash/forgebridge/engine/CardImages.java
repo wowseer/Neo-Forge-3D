@@ -281,6 +281,39 @@ final class CardImages {
         return "";
     }
 
+    /**
+     * Bild der Karte „The Monarch“ (CR 724; wie Arena den Monarchen zeigt: die Krone von Volkan
+     * Baǵa, Commander Legends Token Nr. 14): einmal von Scryfall in Forges Token-Bildordner geladen
+     * ({@code the_monarch_tcmr.jpg}, möglichst von der CDN, sonst über die API im Takt von
+     * {@link ScryfallRateLimiter}); "" = (noch) keins.
+     */
+    static String monarchImage() {
+        return designationImage("tcmr", "14", "the_monarch_tcmr");
+    }
+
+    /** Karte einer Spieler-Kennzeichnung (Scryfall-Druck {@code set}/{@code number}), siehe {@link #monarchImage()}. */
+    private static String designationImage(String set, String number, String file) {
+        String key = "designation|" + file;
+        String known = FOUND.get(key);
+        if (known != null && !known.isEmpty()) {
+            return known;
+        }
+        List<File> dirs = List.of(new File(ForgeConstants.CACHE_TOKEN_PICS_DIR),
+                new File(System.getProperty("user.home"), "Games/NeoForge/datos/cache/pics/tokens"));
+        for (File d : dirs) {
+            File f = new File(d, file + ".jpg");
+            if (f.isFile() && f.length() > 0) {
+                FOUND.put(key, f.getAbsolutePath());
+                return f.getAbsolutePath();
+            }
+        }
+        if (REQUESTED.add(key)) {
+            String url = ForgeConstants.URL_PIC_SCRYFALL_DOWNLOAD + set + "/" + number + "/en?format=image&version=normal";
+            enqueue(url, new File(ForgeConstants.CACHE_TOKEN_PICS_DIR, file + ".jpg"), key);
+        }
+        return "";
+    }
+
     /** Editionsarten mit normalem Rahmen (Kernset, Erweiterung, Reprint-, Commander-, Draft-Sets …). */
     private static final java.util.EnumSet<CardEdition.Type> REGULAR_TYPES = java.util.EnumSet.of(
             CardEdition.Type.CORE, CardEdition.Type.EXPANSION, CardEdition.Type.REPRINT,

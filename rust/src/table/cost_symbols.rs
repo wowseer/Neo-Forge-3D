@@ -318,7 +318,7 @@ pub fn keyword_icon(icon: crate::game::cards::KeywordIcon, size: f32) -> Gd<Spri
 /// Ist `kind` ein Kennzeichen (Monarch, Initiative, Stadtsegen, Ring) statt einer Spieler-Marke?
 /// Kennzeichen zeigt der Tisch wie Arena als freistehendes Emblem, Marken als Plakette mit Zahl.
 pub fn is_seat_designation(kind: &str) -> bool {
-    matches!(kind, "monarch" | "initiative" | "blessing" | "ring")
+    matches!(kind, "monarch" | "monarch_card" | "initiative" | "blessing" | "ring")
 }
 
 /// Kennzeichen bzw. Marke eines Spielers zeichnen, wie in Arena:

@@ -3910,7 +3910,9 @@ impl ForgeTable {
         let game_flag = |key: &str| state.get(key).and_then(|v| v.try_to::<i64>().ok()) == Some(seat as i64);
         let mut out = Vec::new();
         if game_flag("monarch") {
-            out.push(("monarch".to_string(), 1));
+            // wie Arena: die Karte „The Monarch“, sobald ihr Bild da ist, sonst das gezeichnete Emblem
+            let card = state.get("monarch_image").is_some_and(|v| !v.to_string().is_empty());
+            out.push((if card { "monarch_card" } else { "monarch" }.to_string(), 1));
         }
         if game_flag("initiative") {
             out.push(("initiative".to_string(), 1));
@@ -3953,7 +3955,25 @@ impl ForgeTable {
                     continue;
                 }
                 let size = if crate::table::cost_symbols::is_seat_designation(&kind) { SEAT_TOKEN_SIZE } else { SEAT_COUNTER_SIZE };
-                let mut sprite = crate::table::cost_symbols::seat_token(&kind, n, size);
+                let card_image = if kind == "monarch_card" {
+                    state.get("monarch_image").map(|v| v.to_string()).and_then(|p| placeholder::printed_face(&p))
+                } else {
+                    None
+                };
+                let mut sprite = match card_image {
+                    // die Karte „The Monarch“ (wie in Arena), etwas größer als ein Emblem
+                    Some(tex) => {
+                        let mut s = godot::classes::Sprite3D::new_alloc();
+                        let h = tex.get_height().max(1) as f32;
+                        s.set_texture(&tex);
+                        s.set_pixel_size(SEAT_CARD_HEIGHT / h);
+                        s.set_draw_flag(godot::classes::sprite_base_3d::DrawFlags::SHADED, false);
+                        s.set_texture_filter(godot::classes::base_material_3d::TextureFilter::LINEAR_WITH_MIPMAPS);
+                        s.set_render_priority(3);
+                        s
+                    }
+                    None => crate::table::cost_symbols::seat_token(&kind, n, size),
+                };
                 sprite.set_rotation(Vector3::new(-std::f32::consts::FRAC_PI_2, 0.0, 0.0));
                 parent.add_child(&sprite);
                 kept.push((kind, n, sprite, 0.0));
@@ -5904,6 +5924,8 @@ struct Search {
 
 /// Spielsteine der Spieler-Kennzeichen: Durchmesser, Höhe über dem Tisch, Dauer des Aufspringens.
 const SEAT_TOKEN_SIZE: f32 = 0.8;
+/// Höhe der Karte „The Monarch“ neben dem Medaillon (Kennzeichen als echte Karte wie in Arena).
+const SEAT_CARD_HEIGHT: f32 = 1.25;
 /// Reihe der Kennzeichen und Marken neben dem Medaillon (Pixel bei 1080 Bildhöhe, ab der
 /// Medaillon-Mitte): Mitte des ersten Steins, Abstand je Marke bzw. Kennzeichen und Höhe (auf
 /// Höhe der Lebens-Plakette, unter der Artefakt-Reihe).

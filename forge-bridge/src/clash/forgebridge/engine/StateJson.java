@@ -77,6 +77,13 @@ final class StateJson {
         // Monarch (CR 724), Initiative (CR 725), Tag/Nacht (CR 726; null = noch keins)
         Player monarch = game.getMonarch();
         s.addProperty("monarch", monarch == null ? -1 : indexOf(game, monarch));
+        if (monarch != null) {
+            // die Karte „The Monarch“ (wie in Arena); "" solange sie noch geladen wird
+            String img = CardImages.monarchImage();
+            if (!img.isEmpty()) {
+                s.addProperty("monarch_image", img);
+            }
+        }
         Player initiative = game.getHasInitiative();
         s.addProperty("initiative", initiative == null ? -1 : indexOf(game, initiative));
         Boolean day = game.getDayTime();
