@@ -116,7 +116,11 @@ public class BulkImages {
         }
         for (PaperToken pt : allTokens) {
             try {
-                String file = pt.getImageFilename(1);
+                // Forge sucht Spielsteine als „name_SET_NR“ (ImageKeys.getImageFile: die Teile des
+                // Schlüssels „name|SET|NR|i“ mit „_“ verbunden, ohne den Index) – „|“ wäre unter
+                // Windows im Dateinamen auch verboten
+                String key = pt.getImageFilename(1);
+                String file = key == null ? null : String.join("_", java.util.Arrays.asList(key.split("\\|")).subList(0, Math.min(3, key.split("\\|").length)));
                 CardEdition ed = StaticData.instance().getCardEdition(pt.getEdition());
                 String cn = pt.getCollectorNumber();
                 if (file == null || file.isEmpty() || ed == null || cn == null || cn.isEmpty()) {

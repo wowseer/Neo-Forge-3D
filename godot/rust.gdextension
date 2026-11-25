@@ -6,3 +6,4 @@ reloadable = true
 [libraries]
 linux.debug.x86_64 = "res://../rust/target/debug/libneo_forge_3d.so"
 linux.release.x86_64 = "res://../rust/target/release/libneo_forge_3d.so"
+windows.release.x86_64 = "res://../rust/target/x86_64-pc-windows-msvc/release/neo_forge_3d.dll"
