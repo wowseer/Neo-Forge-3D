@@ -317,11 +317,21 @@ public final class BridgeCore {
         if (game == null || game.isGameOver()) {
             return;
         }
-        java.util.List<forge.game.player.Player> seats = game.getRegisteredPlayers();
-        if (seat < 0 || seat >= seats.size() || seats.get(seat).hasLost()) {
-            return;
+        if (embedded) {
+            // eingebettet: der Platz in der Partie des Gastgebers ist nicht unbedingt 0 – es
+            // geben die Spieler auf, die der Tisch steuert
+            for (forge.game.player.Player p : game.getPlayers()) {
+                if (clash.forgebridge.ClashBridge.isRemote(p.getLobbyPlayer()) && !p.hasLost()) {
+                    p.concede();
+                }
+            }
+        } else {
+            java.util.List<forge.game.player.Player> seats = game.getRegisteredPlayers();
+            if (seat < 0 || seat >= seats.size() || seats.get(seat).hasLost()) {
+                return;
+            }
+            seats.get(seat).concede();
         }
-        seats.get(seat).concede();
         PENDING.values().forEach(f -> f.complete(JsonNull.INSTANCE));
         PENDING.clear();
     }

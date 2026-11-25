@@ -399,9 +399,14 @@ impl TurnHud {
         self.choice = Some(ChoicePanel::new(&mut root));
         // Zahnrad oben rechts: Optionen (Vollbild, Aufgeben); Aufgeben geht an den ForgeTable
         // (zurückgestellt, falls er beim Klick gerade gebunden ist)
+        // eigene Bildebene ganz vorn: die Abdunkelung des offenen Menüs liegt über dem ganzen HUD
+        let mut options_layer = CanvasLayer::new_alloc();
+        options_layer.set_name("OptionsLayer");
+        options_layer.set_layer(HUD_CANVAS_LAYER + 1);
         let mut options = OptionsMenu::new_alloc();
         options.set_name("Options");
-        root.add_child(&options);
+        options_layer.add_child(&options);
+        self.base_mut().add_child(&options_layer);
         if let Some(ft) = self.forge_table.clone() {
             options.connect_flags("concede_requested", &Callable::from_object_method(&ft, "concede_game"), ConnectFlags::DEFERRED);
         }

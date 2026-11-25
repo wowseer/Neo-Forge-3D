@@ -369,7 +369,7 @@ Zahnrad-Symbol (gezeichnet): Kranz mit acht Zähnen und Loch in der Mitte.
 
 *Erbt von `Control` · Quelle: `rust/src/game/options_menu.rs`*
 
-Zahnrad oben rechts mit Optionen-Menü (siehe Modul-Doku).
+Zahnrad oben rechts mit dem Spielmenü (siehe Modul-Doku).
 
 ### Funktionen
 
@@ -378,14 +378,17 @@ Zahnrad oben rechts mit Optionen-Menü (siehe Modul-Doku).
 | `on_gear_pressed()` | `void` |  |
 | `on_gear_hover(hovered: bool)` | `void` |  |
 | `on_fullscreen()` | `void` |  |
-| `on_concede()` | `void` |  |
+| `on_concede()` | `void` | „Aufgeben“ im Menü: Rückfrage-Fenster statt des Menüs. |
+| `on_concede_confirmed()` | `void` | Rückfrage bestätigt: aufgeben. |
+| `on_concede_cancelled()` | `void` | Rückfrage abgebrochen: zurück ins Menü. |
 | `on_resume()` | `void` |  |
+| `on_dim_input(event: InputEvent)` | `void` | Klick auf die Abdunkelung neben dem Menü: weiterspielen. |
 
 ### Signale
 
 | Signal | Beschreibung |
 |---|---|
-| `concede_requested()` | Der Spieler will aufgeben (bestätigt). |
+| `concede_requested()` | Der Spieler will aufgeben (im Rückfrage-Fenster bestätigt). |
 
 ## PhaseTimeline
 
