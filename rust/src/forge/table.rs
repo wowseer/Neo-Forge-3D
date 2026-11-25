@@ -5159,15 +5159,29 @@ impl ForgeTable {
             })
     }
 
-    /// Kartendaten für die Karte einer Fähigkeit auf dem Stack: Name und Typ der Quelle, keine
-    /// Kosten, dazu `source` und `text` des Eintrags.
+    /// Kartendaten für die Karte einer Fähigkeit auf dem Stack: Name, Typ, Bild und Farben der
+    /// Quelle, darauf als eigener Text (`chosen_modes`) der Text des Eintrags; dazu `source`.
     fn ability_card(&self, item: &VarDictionary) -> VarDictionary {
         let source = get_int(item, "source");
         let mut d = VarDictionary::new();
-        match self.card_data(source) {
+        // Karte der Quelle: aus dem Stack-Eintrag (`source_card`, auch wenn sie den Tisch schon
+        // verlassen hat), sonst aus dem Zustand
+        let src = item
+            .get("source_card")
+            .and_then(|v| v.try_to::<VarDictionary>().ok())
+            .or_else(|| self.card_data(source));
+        match src {
             Some(src) => {
                 d.set("name", get_str(&src, "name"));
                 d.set("type", get_str(&src, "type"));
+                // wie Arena: das echte Kartenbild der Quelle, darauf nur der Text der Fähigkeit
+                // (Feld über dem gedruckten Textfeld, wie bei modalen Zaubern)
+                for key in ["image", "art", "crop", "colors", "cost"] {
+                    if let Some(v) = src.get(key) {
+                        d.set(key, &v);
+                    }
+                }
+                d.set("chosen_modes", true);
             }
             None => {
                 let name = self.cards.get(&source).filter(|c| c.is_instance_valid()).map(|c| c.bind().card_name().to_string());

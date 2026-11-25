@@ -193,6 +193,11 @@ final class StateJson {
             o.addProperty("text", si.getStackDescription());
             if (si.isSpell() && src != null) {
                 o.add("card", card(src));
+            } else if (src != null) {
+                // Fähigkeit: Karte der Quelle (Bild, Farben), auch wenn sie nicht mehr auf dem
+                // Tisch liegt (Trigger beim Sterben, aus dem Exil …) – die UI zeigt die Fähigkeit
+                // auf dem echten Kartenbild der Quelle
+                o.add("source_card", card(src));
             }
             // modale Zauber (CR 700.2): Texte der gewählten Modi, damit die Karte nur diese zeigt
             // Forge hängt die gewählten Modi als Unterfähigkeiten mit SVar „CharmOrder“ an
