@@ -367,6 +367,13 @@ impl ForgeBridge {
     pub fn debug_infinite_mana(&mut self, seat: i64, on: bool) -> bool {
         self.send_value(&command::debug_infinite_mana(seat.clamp(0, 255) as PlayerId, on))
     }
+
+    /// Sitzplatz `seat` gibt die laufende Partie auf (Optionen-Menü); danach kommt wie sonst
+    /// `game_over`.
+    #[func]
+    pub fn concede(&mut self, seat: i64) -> bool {
+        self.send_value(&command::concede(seat.clamp(0, 255) as PlayerId))
+    }
 }
 
 impl ForgeBridge {

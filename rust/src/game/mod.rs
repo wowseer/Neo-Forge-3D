@@ -13,6 +13,7 @@ pub mod hud;
 pub mod mana;
 pub mod mana_symbols;
 pub mod mana_view;
+pub mod options_menu;
 pub mod phase_timeline;
 pub mod phases;
 pub mod seat;

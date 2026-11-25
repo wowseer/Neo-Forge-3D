@@ -17,6 +17,8 @@ Sitzplätze werden als Zahl übergeben: `0` = Spieler (unten), `1` = Gegner (obe
 - [ManaCost](#manacost) – erbt von `Resource`
 - [ManaPool](#manapool) – erbt von `Node`
 - [ManaPoolView](#manapoolview) – erbt von `Control`
+- [GearIcon](#gearicon) – erbt von `Control`
+- [OptionsMenu](#optionsmenu) – erbt von `Control`
 - [PhaseTimeline](#phasetimeline) – erbt von `Control`
 - [PlayerSeat](#playerseat) – erbt von `Node3D`
 - [SeatBadge](#seatbadge) – erbt von `Control`
@@ -80,6 +82,7 @@ Verbindung zur Forge-Regel-Engine: startet die Java-Brücke (`forge-bridge/`) al
 | `debug_request_card_names()` | `bool` | Debug: alle Kartennamen anfordern → [signal debug_card_names_received]. |
 | `debug_add_card(seat: int, name: String)` | `bool` | Debug: Karte `name` neu erzeugen und Sitzplatz `seat` auf die Hand legen. Danach kommt der neue Zustand; eine offene Priorität wird neu gestellt. |
 | `debug_infinite_mana(seat: int, on: bool)` | `bool` | Debug: unendliches Mana für Sitzplatz `seat` an/aus (Pool wird bei jedem Phasenwechsel und Zauber auf 50 je Manaart aufgefüllt). |
+| `concede(seat: int)` | `bool` | Sitzplatz `seat` gibt die laufende Partie auf (Optionen-Menü); danach kommt wie sonst `game_over`. |
 
 ### Signale
 
@@ -164,6 +167,7 @@ Spielt eine Partie mit der Forge-Regel-Engine auf dem 3D-Tisch: Karten, Zonen, K
 | `on_state(state: Dictionary)` | `void` | Neuer Spielzustand von Forge (Spielstart oder Abfrage): Tisch abgleichen. |
 | `on_forge_event(event: Dictionary)` | `void` | Forge-Ereignis: Zustand bald neu abfragen (gebündelt, siehe `refresh_interval`). |
 | `on_decision_requested(request: Dictionary)` | `void` | Entscheidung des Spielers nötig (Protokoll v3): Zustand übernehmen, Quellkarte markieren, spielbare Karten leuchten lassen. Unbekannte Entscheidungen werden mit `Cancel` beantwortet (die Engine entscheidet dann selbst). |
+| `concede_game()` | `void` | Optionen-Menü → „Aufgeben“: der eigene Sitzplatz gibt auf (die Partie endet dann wie gewohnt mit `game_over`). |
 | `on_game_over(result: Dictionary)` | `void` | Partie vorbei: Sieger merken (HUD zeigt ihn an). |
 | `on_bridge_error(code: String, message: String)` | `void` | Fehler der Brücke: als Warnung in die Godot-Konsole schreiben. |
 | `on_card_clicked(card: Card3D)` | `void` | Karte angeklickt: bei der Zielwahl = Ziel wählen/abwählen; mit Priorität = Aktion der Karte (nicht aus der Hand – die spielt man durch Ziehen): eine Aktion sofort, mehrere über das Fähigkeiten-Menü. |
@@ -354,6 +358,34 @@ Manapool als Reihe runder Symbole (HUD). Wird vom `TurnHud` jedes Frame über `s
 | Signal | Beschreibung |
 |---|---|
 | `mana_clicked(mana: int)` | Ein anklickbares Mana-Symbol wurde angeklickt (`mana` = Manaart: 0 = Weiß, 1 = Blau, 2 = Schwarz, 3 = Rot, 4 = Grün, 5 = Farblos). |
+
+## GearIcon
+
+*Erbt von `Control` · Quelle: `rust/src/game/options_menu.rs`*
+
+Zahnrad-Symbol (gezeichnet): Kranz mit acht Zähnen und Loch in der Mitte.
+
+## OptionsMenu
+
+*Erbt von `Control` · Quelle: `rust/src/game/options_menu.rs`*
+
+Zahnrad oben rechts mit Optionen-Menü (siehe Modul-Doku).
+
+### Funktionen
+
+| Funktion | Rückgabe | Beschreibung |
+|---|---|---|
+| `on_gear_pressed()` | `void` |  |
+| `on_gear_hover(hovered: bool)` | `void` |  |
+| `on_fullscreen()` | `void` |  |
+| `on_concede()` | `void` |  |
+| `on_resume()` | `void` |  |
+
+### Signale
+
+| Signal | Beschreibung |
+|---|---|
+| `concede_requested()` | Der Spieler will aufgeben (bestätigt). |
 
 ## PhaseTimeline
 
@@ -737,6 +769,7 @@ Bühne vor der Kamera: Abdunkelung, Kartenfächer (`Zone`), Titel und `Button3D`
 | `enable_line()` | `void` | Wie `enable_scroll()`, aber die Karten liegen auf einer geraden Linie (ohne Bogen und ohne Drehung), z. B. beim Abwerfen. |
 | `enable_scroll_with(step: float, radius: float)` | `void` | Wie `enable_scroll()`, mit eigenem Kartenabstand `step` (kleiner als eine Kartenbreite = überlappend) und Bogenradius `radius` (klein = stärker gebogen). |
 | `on_scroll(value: float)` | `void` | Schieberegler bewegt (0 = linkes Ende sichtbar, 1 = rechtes Ende). |
+| `enable_hover_zoom(height: float)` | `void` | Karten der Bühne beim Hovern groß und gerade vor die Kamera holen (Anteil `height` der Bildschirmhöhe), damit ihr Text lesbar ist – z. B. bei der Reihenfolge von Triggern; nach `add_owned_cards()` aufrufen. |
 | `enable_coverflow(step: float, scale: float)` | `void` | Fächer als Cover-Flow zum Durchsuchen vieler Karten (Bibliothek, Friedhof …), nach `show_options()` bzw. `add_owned_cards()` aufrufen: Karten in Größe `scale` im Abstand `step` überlappend nebeneinander, die mittlere vorn und gerade, die übrigen zur Seite gedreht und nach hinten versetzt, am Rand dicht gestapelt (`Zone.coverflow`). Die Karte unter der Maus kommt groß und gerade nach vorn (Hover-Zoom). Bei vielen Karten erscheint darunter ein `Slider3D`; Schieben lässt die Karten durch die Mitte laufen (Start: Mitte). |
 | `enable_peek()` | `void` | Knopf „Schlachtfeld ansehen“ oben rechts: blendet die Bühne samt Abdunkelung und den Karten darauf aus (auch ausgeliehene wie die Starthand; der Tisch ist dann sichtbar und hoverbar), ein erneuter Druck („Zurück zur Auswahl“) holt sie zurück. Die Entscheidung bleibt dabei offen. |
 | `on_peek()` | `void` | „Schlachtfeld ansehen“ gedrückt: Bühne aus- bzw. wieder einblenden. |

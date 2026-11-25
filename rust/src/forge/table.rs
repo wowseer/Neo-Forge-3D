@@ -1514,6 +1514,18 @@ impl ForgeTable {
         self.update_glow();
     }
 
+    /// Optionen-Menü → „Aufgeben“: der eigene Sitzplatz gibt auf (die Partie endet dann wie
+    /// gewohnt mit `game_over`).
+    #[func]
+    fn concede_game(&mut self) {
+        if !self.match_running {
+            return;
+        }
+        if let Some(b) = self.bridge.as_mut() {
+            b.bind_mut().concede(LOCAL_SEAT);
+        }
+    }
+
     /// Partie vorbei: Sieger merken (HUD zeigt ihn an).
     #[func]
     fn on_game_over(&mut self, result: VarDictionary) {

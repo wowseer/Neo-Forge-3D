@@ -236,6 +236,7 @@ JSON Lines, UTF-8: exactly one JSON message per line.
 | `debug_add_card` | `seat`, `name` | debug: create a new card and put it into the player's hand |
 | `debug_infinite_mana` | `seat`, `on` | debug: refill the player's mana pool to 50 per mana type (WUBRGC) on every phase change and spell, or turn that off |
 | `window` | `x`, `y`, `width`, `height` (screen pixels, content area without frame), `mode` (`windowed`, `maximized`, `fullscreen`) | embedded: the table reports where its window is (whenever it changes; not while minimised). The host puts its own window there after the match (window handoff, `ClashBridge.tableWindow()`); standalone it is only stored |
+| `concede` | `seat` | the seat concedes the running match (options menu of the table); open requests are ended (the engine decides them), later requests of that seat are not sent, then `game_over` follows as usual |
 | `quit` | – | ends the process |
 
 ### Messages (Forge → Godot, stdout)

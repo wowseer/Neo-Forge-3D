@@ -103,6 +103,11 @@ pub fn debug_infinite_mana(seat: PlayerId, on: bool) -> Value {
     json!({ "cmd": "debug_infinite_mana", "seat": seat, "on": on })
 }
 
+/// Sitzplatz `seat` gibt die laufende Partie auf (Optionen-Menü des Tisches).
+pub fn concede(seat: PlayerId) -> Value {
+    json!({ "cmd": "concede", "seat": seat })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -38,6 +38,7 @@ use super::mana_view::ManaPoolView;
 use super::phase_timeline::PhaseTimeline;
 use super::seat_badge::SeatBadge;
 use super::choice_panel::ChoicePanel;
+use super::options_menu::OptionsMenu;
 pub use super::choice_panel::HudChoice;
 use crate::forge::table::ForgeTable;
 use crate::table::button3d::{Button3D, ButtonStyle, COMPACT_BODY, WIDE_BODY};
@@ -396,6 +397,14 @@ impl TurnHud {
         self.base_mut().add_child(&end_turn);
 
         self.choice = Some(ChoicePanel::new(&mut root));
+        // Zahnrad oben rechts: Optionen (Vollbild, Aufgeben); Aufgeben geht an den ForgeTable
+        // (zurückgestellt, falls er beim Klick gerade gebunden ist)
+        let mut options = OptionsMenu::new_alloc();
+        options.set_name("Options");
+        root.add_child(&options);
+        if let Some(ft) = self.forge_table.clone() {
+            options.connect_flags("concede_requested", &Callable::from_object_method(&ft, "concede_game"), ConnectFlags::DEFERRED);
+        }
         // Medaillon-Klicks (Spieler als Ziel) an den ForgeTable melden
         for (seat, badge) in [(0i64, &me_badge), (1, &opp_badge)] {
             let cb = Callable::from_object_method(&self.to_gd(), "on_badge_clicked").bind(&[seat.to_variant()]);

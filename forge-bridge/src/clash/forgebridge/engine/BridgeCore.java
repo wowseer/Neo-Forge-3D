@@ -296,6 +296,8 @@ public final class BridgeCore {
                     cmd.has("seat") ? cmd.get("seat").getAsInt() : 0, cmd.has("on") && cmd.get("on").getAsBoolean());
             // Lage des Tisch-Fensters (Fensterübergabe im Gastgeber), siehe ClashBridge.tableWindow
             case "window" -> tableWindow = cmd;
+            // Optionen-Menü des Tisches: Sitzplatz gibt auf
+            case "concede" -> concede(cmd.has("seat") ? cmd.get("seat").getAsInt() : 0);
             case "quit" -> {
                 if (!embedded) {
                     System.exit(0);
@@ -303,6 +305,35 @@ public final class BridgeCore {
             }
             default -> sendError("unknown_command", "Unbekannter Befehl: " + name);
         }
+    }
+
+    /**
+     * Sitzplatz {@code seat} gibt die laufende Partie auf. Offene Anfragen werden beendet (die
+     * Engine entscheidet sie selbst), damit der Spiel-Thread weiterläuft und Forge die Aufgabe
+     * anwendet; danach kommt wie sonst {@code game_over}.
+     */
+    private static void concede(int seat) {
+        Game game = currentGame;
+        if (game == null || game.isGameOver()) {
+            return;
+        }
+        java.util.List<forge.game.player.Player> seats = game.getRegisteredPlayers();
+        if (seat < 0 || seat >= seats.size() || seats.get(seat).hasLost()) {
+            return;
+        }
+        seats.get(seat).concede();
+        PENDING.values().forEach(f -> f.complete(JsonNull.INSTANCE));
+        PENDING.clear();
+    }
+
+    /** Hat Sitzplatz {@code seat} schon aufgegeben bzw. verloren? Dann fragt ihn niemand mehr. */
+    private static boolean hasConceded(int seat) {
+        Game game = currentGame;
+        if (game == null) {
+            return false;
+        }
+        java.util.List<forge.game.player.Player> seats = game.getRegisteredPlayers();
+        return seat >= 0 && seat < seats.size() && seats.get(seat).hasLost();
     }
 
     private static void startMatch(JsonObject cmd) {
@@ -430,7 +461,7 @@ public final class BridgeCore {
      * (oder JsonNull).
      */
     static JsonElement request(int player, JsonObject envelope) {
-        if (disconnected) {
+        if (disconnected || hasConceded(player)) {
             return JsonNull.INSTANCE;
         }
         int id = NEXT_ID.getAndIncrement();
