@@ -60,9 +60,12 @@ public final class ClashTable {
             GameType.ArchenemyRumble, GameType.Planechase, GameType.Vanguard, GameType.MomirBasic,
             GameType.MoJhoSto);
 
-    /** Soll der 3D-Tisch verwendet werden (Schalter in den Einstellungen bzw. {@code neo.clash})? */
+    /**
+     * Soll der 3D-Tisch verwendet werden (Schalter in den Einstellungen bzw. {@code neo.clash})?
+     * Vorgabe: ja – jede Partie 1 gegen 1 läuft am 3D-Tisch, bis der Spieler ihn abschaltet.
+     */
     public static boolean isEnabled() {
-        return Boolean.parseBoolean(setting("neo.clash", "NEOFORGE_CLASH", SETTING_ON, "false"));
+        return Boolean.parseBoolean(setting("neo.clash", "NEOFORGE_CLASH", SETTING_ON, "true"));
     }
 
     /**

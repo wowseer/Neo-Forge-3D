@@ -10,7 +10,8 @@
 set -e
 cd "$(dirname "$0")/.."
 GODOT="${GODOT:-godot}"
-VER="$("$GODOT" --version | sed -E 's/^([0-9]+\.[0-9]+(\.[0-9]+)?\.[a-z0-9]+).*/\1/')"
+# Version ohne Build-Kennung, z. B. „4.7.2.stable“ bzw. „4.7.2.stable.mono“ (Mono-Editor)
+VER="$("$GODOT" --version | sed -E 's/^([0-9]+\.[0-9]+(\.[0-9]+)?\.[a-z0-9]+(\.mono)?).*/\1/')"
 TPL="${XDG_DATA_HOME:-$HOME/.local/share}/godot/export_templates/$VER/linux_release.x86_64"
 [ -f "$TPL" ] || { echo "Exportvorlage fehlt: $TPL (Godot-Editor → Exportvorlagen verwalten)"; exit 1; }
 # ohne eingebettete Klassen-Doku (nur im Editor nützlich)

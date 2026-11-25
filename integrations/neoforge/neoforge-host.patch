@@ -1,23 +1,8 @@
-diff --git a/forge-gui-neo/src/main/java/forge/neo/NeoApp.java b/forge-gui-neo/src/main/java/forge/neo/NeoApp.java
-index 55a68ca..89cbe1f 100644
---- a/forge-gui-neo/src/main/java/forge/neo/NeoApp.java
-+++ b/forge-gui-neo/src/main/java/forge/neo/NeoApp.java
-@@ -3991,6 +3991,10 @@ public class NeoApp extends Application implements SettingsPanel.Host {
-         if (draftScreen != null && draftScreen.getScene() != null) {
-             draftScreen.refreshRanking();
-         }
-+        // Neo Forge 3D: die Bewertung gibt es auch beim Deckbau nach Draft/Sealed.
-+        if (builder != null && builder.getScene() != null) {
-+            builder.refreshRanking();
-+        }
-     }
- 
-     @Override
 diff --git a/forge-gui-neo/src/main/java/forge/neo/NeoMain.java b/forge-gui-neo/src/main/java/forge/neo/NeoMain.java
-index 53d5f0c..8428db5 100644
+index d139c09..11901f9 100644
 --- a/forge-gui-neo/src/main/java/forge/neo/NeoMain.java
 +++ b/forge-gui-neo/src/main/java/forge/neo/NeoMain.java
-@@ -223,6 +223,12 @@ public final class NeoMain {
+@@ -246,6 +246,12 @@ public final class NeoMain {
              case "watch":
                  runGame(deckName, opponents, NeoMatchUI.Mode.OBSERVE, timeout, verbose);
                  break;
@@ -243,624 +228,11 @@ index d456cfc..785ad50 100644
              final Lwjgl3Window window = adventureWindow;
              Gdx.app.postRunnable(() -> {
                  if (window != null) {
-diff --git a/forge-gui-neo/src/main/java/forge/neo/card/CardNode.java b/forge-gui-neo/src/main/java/forge/neo/card/CardNode.java
-index 5d6b06c..ecd4224 100644
---- a/forge-gui-neo/src/main/java/forge/neo/card/CardNode.java
-+++ b/forge-gui-neo/src/main/java/forge/neo/card/CardNode.java
-@@ -414,6 +414,11 @@ public class CardNode extends StackPane {
-         fbType.getStyleClass().add("card-fb-type");
-         fbType.setWrapText(true);
-         fbPt.getStyleClass().add("card-fb-pt");
-+        // Neo Forge 3D: die P/T des Ersatzes rechts unten, wo sie auf der
-+        // gedruckten Karte (und als Pastille auf dem Bild) auch steht. Links
-+        // unten ist der Platz der Draft-Bewertung, die jetzt auch ohne Bild
-+        // erscheint (siehe refresh()).
-+        fbPt.setAlignment(Pos.CENTER_RIGHT);
-         final Region spacer = new Region();
-         VBox.setVgrow(spacer, javafx.scene.layout.Priority.ALWAYS);
-         fallback.getChildren().addAll(fbName, fbCost, fbType, spacer, fbPt);
-@@ -759,6 +764,7 @@ public class CardNode extends StackPane {
-         fbType.setPrefWidth(textWidth);
-         fbCost.setMaxWidth(textWidth);
-         fbPt.setMaxWidth(textWidth);
-+        fbPt.setPrefWidth(textWidth);
-         final double fs = Math.max(7, w * 0.085);
-         fbName.setStyle("-fx-font-size:" + fs + "px;");
-         fbCost.setStyle("-fx-font-size:" + (fs * 0.85) + "px;");
-@@ -1099,13 +1105,15 @@ public class CardNode extends StackPane {
-                     || (st != null && st.getFoilIndex() > 0) || card.hasPaperFoil());
-         setFoil(foil);
- 
--        // El rating del draft comparte esquina con la P/T del respaldo
--        // procedural (fbPt): sin arte, esa esquina ya esta ocupada.
--        if (draftRank != null && hasArt) {
-+        // Neo Forge 3D: die Draft-Bewertung auch OHNE Bild. Frueher nur mit
-+        // Bild, weil die P/T des Ersatzes (fbPt) dieselbe Ecke belegte — so
-+        // fehlte die Zahl gerade dann, wenn Scryfall nicht erreichbar war oder
-+        // die Bilder eines neuen Sets noch luden. fbPt steht jetzt rechts.
-+        if (draftRank != null) {
-             rankBadge.setText(String.valueOf(draftRank));
-             rankBadge.setVisible(true);
--            rankBadge.pseudoClassStateChanged(RANK_GOOD, draftRank >= 66);
--            rankBadge.pseudoClassStateChanged(RANK_POOR, draftRank < 33);
-+            rankBadge.pseudoClassStateChanged(RANK_GOOD, draftRank >= forge.neo.draft.DraftRating.GOOD);
-+            rankBadge.pseudoClassStateChanged(RANK_POOR, draftRank < forge.neo.draft.DraftRating.POOR);
-         } else {
-             rankBadge.setVisible(false);
-             rankBadge.pseudoClassStateChanged(RANK_GOOD, false);
-diff --git a/forge-gui-neo/src/main/java/forge/neo/card/ScryfallCdn.java b/forge-gui-neo/src/main/java/forge/neo/card/ScryfallCdn.java
-new file mode 100644
-index 0000000..85bbd56
---- /dev/null
-+++ b/forge-gui-neo/src/main/java/forge/neo/card/ScryfallCdn.java
-@@ -0,0 +1,433 @@
-+package forge.neo.card;
-+
-+import java.io.BufferedReader;
-+import java.io.BufferedWriter;
-+import java.io.File;
-+import java.io.IOException;
-+import java.io.InputStream;
-+import java.io.InputStreamReader;
-+import java.net.HttpURLConnection;
-+import java.net.URL;
-+import java.net.URLDecoder;
-+import java.net.URLEncoder;
-+import java.nio.charset.StandardCharsets;
-+import java.nio.file.Files;
-+import java.nio.file.StandardCopyOption;
-+import java.util.HashMap;
-+import java.util.LinkedHashSet;
-+import java.util.Map;
-+import java.util.Set;
-+import java.util.concurrent.ConcurrentHashMap;
-+import java.util.concurrent.ExecutorService;
-+import java.util.concurrent.Executors;
-+import java.util.zip.GZIPInputStream;
-+
-+import com.google.gson.JsonArray;
-+import com.google.gson.JsonElement;
-+import com.google.gson.JsonObject;
-+import com.google.gson.JsonParser;
-+
-+import forge.localinstance.properties.ForgeConstants;
-+import forge.util.ScryfallRateLimiter;
-+
-+/**
-+ * Neo Forge 3D: Kartenbilder direkt von Scryfalls CDN statt ueber die API.
-+ *
-+ * <h2>Warum</h2>
-+ *
-+ * <p>Jedes Bild war eine Anfrage an {@code api.scryfall.com/cards/<set>/<nr>/<sprache>?format=image},
-+ * die nur auf das eigentliche Bild auf {@code cards.scryfall.io} weiterleitet. Die API ist
-+ * auf zehn Anfragen pro Sekunde begrenzt ({@link ScryfallRateLimiter}), und mit deutschem
-+ * Arte kam bei jeder Karte ohne deutschen Druck noch eine vergebliche Anfrage dazu. Ein frischer
-+ * Booster brauchte so ~2 s, ein Deck mit 40 neuen Karten entsprechend laenger. Die CDN hat
-+ * kein Limit — man muss nur die Scryfall-ID jedes Drucks kennen.
-+ *
-+ * <h2>Wie</h2>
-+ *
-+ * <p>Die IDs kommen <b>pro Edition</b> aus der Suche
-+ * ({@code /cards/search?q=set:X (lang:en or lang:de)}): 175 Karten je Seite, eine Edition in
-+ * ein bis fuenf Anfragen statt einer je Karte. Der Index liegt danach in
-+ * {@code cache/neo-cdn/<set>.txt} und gilt auch beim naechsten Start. Dasselbe macht Forge mit
-+ * {@code CdnUuidCache}/{@code ScryfallSetSync}, aber dort nur fuer Englisch plus
-+ * {@code UI_CARD_DOWNLOAD_LANG}, und im Spiel wird der Index nie angelegt — nur gelesen.
-+ *
-+ * <p><b>Nie langsamer als vorher:</b> Ist der Index einer Edition noch nicht da, antwortet
-+ * {@link #cdnFor} sofort mit {@code null} (der Aufrufer nimmt die API wie bisher) und stoesst
-+ * das Laden im Hintergrund an. Ab dann laufen die Bilder dieser Edition ueber die CDN.
-+ */
-+public final class ScryfallCdn {
-+
-+    private ScryfallCdn() {
-+    }
-+
-+    /** {@code -Dneo.images.debug=true} zeigt auch, was hier passiert. */
-+    private static final boolean DEBUG = Boolean.getBoolean("neo.images.debug");
-+
-+    private static final String API_PREFIX = ForgeConstants.URL_PIC_SCRYFALL_DOWNLOAD;
-+    private static final String SEARCH = "https://api.scryfall.com/cards/search";
-+    /** Ein vollstaendiger Index, dem eine Karte fehlt, wird nach so langer Zeit neu geholt (neue Vorschauen). */
-+    private static final long STALE_MS = 24L * 60 * 60 * 1000;
-+    /** Nach einem Fehlschlag (kein Netz) so lange nicht erneut versuchen. */
-+    private static final long RETRY_FAILED_MS = 2L * 60 * 1000;
-+
-+    /** Index einer Edition: "nr|sprache" -> {vorne, hinten}. */
-+    private static final class Index {
-+        final Map<String, String[]> uuids = new HashMap<>();
-+        /** Alle Nummern, die in irgendeiner Sprache vorkommen. */
-+        final Set<String> numbers = new java.util.HashSet<>();
-+        final Set<String> langs = new LinkedHashSet<>();
-+        long fetchedAt;
-+    }
-+
-+    private static final Map<String, Index> LOADED = new ConcurrentHashMap<>();
-+    /** Editionen, fuer die schon geschaut wurde, ob ein Index auf der Platte liegt. */
-+    private static final Set<String> DISK_CHECKED = ConcurrentHashMap.newKeySet();
-+    private static final Set<String> SYNCING = ConcurrentHashMap.newKeySet();
-+    /** Editionen, deren veralteter Index in dieser Sitzung schon neu geholt wurde. */
-+    private static final Set<String> REFRESHED = ConcurrentHashMap.newKeySet();
-+    private static final Map<String, Long> FAILED = new ConcurrentHashMap<>();
-+
-+    /** Ein Thread: die Suche ist ohnehin auf zwei Anfragen pro Sekunde begrenzt. */
-+    private static final ExecutorService SYNC = Executors.newSingleThreadExecutor(r -> {
-+        final Thread t = new Thread(r, "neo-cdn-index");
-+        t.setDaemon(true);
-+        return t;
-+    });
-+
-+    /** Eine zerlegte API-Bildadresse. */
-+    private record Request(String set, String number, String lang, String size, String ext, boolean back) {
-+    }
-+
-+    /**
-+     * Die CDN-Adresse fuer diese API-Bildadresse, oder {@code null}: dann bleibt es bei der API.
-+     * Wartet nie; fehlt der Index der Edition, wird er im Hintergrund geholt.
-+     */
-+    public static String cdnFor(final String apiUrl) {
-+        final Request r = parse(apiUrl);
-+        if (r == null) {
-+            return null;
-+        }
-+        final Index index = index(r);
-+        if (index == null) {
-+            return null;
-+        }
-+        final String[] ids = index.uuids.get(r.number + "|" + r.lang);
-+        if (ids == null) {
-+            maybeRefresh(r, index);
-+            return null;
-+        }
-+        final String uuid = r.back ? ids[1] : ids[0];
-+        if (uuid == null || uuid.length() < 2) {
-+            return null;
-+        }
-+        return ForgeConstants.URL_SCRYFALL_CDN + r.size + "/" + (r.back ? "back" : "front") + "/"
-+                + uuid.charAt(0) + "/" + uuid.charAt(1) + "/" + uuid + "." + r.ext;
-+    }
-+
-+    /**
-+     * Ob der Index sicher sagt, dass es diese Karte in dieser Sprache NICHT gibt: die Edition
-+     * ist geladen, mit dieser Sprache, und die Nummer steht drin — nur nicht in dieser Sprache.
-+     * Dann kann die Anfrage nach der Uebersetzung entfallen. Im Zweifel {@code false}.
-+     */
-+    public static boolean knownAbsent(final String apiUrl) {
-+        final Request r = parse(apiUrl);
-+        if (r == null) {
-+            return false;
-+        }
-+        final Index index = index(r);
-+        if (index == null || !index.langs.contains(r.lang) || !index.numbers.contains(r.number)) {
-+            return false;
-+        }
-+        return !index.uuids.containsKey(r.number + "|" + r.lang);
-+    }
-+
-+    // ------------------------------------------------------------------
-+    // Zerlegen: ".../cards/<set>/<nr>/<sprache>?format=image&version=normal&face=back"
-+
-+    private static Request parse(final String url) {
-+        if (url == null || !url.startsWith(API_PREFIX)) {
-+            return null;
-+        }
-+        final int q = url.indexOf('?');
-+        if (q < 0) {
-+            return null;
-+        }
-+        final String query = url.substring(q + 1);
-+        if (!query.contains("format=image")) {
-+            return null;
-+        }
-+        final String[] parts = url.substring(API_PREFIX.length(), q).split("/", -1);
-+        if (parts.length < 2 || parts[0].isEmpty() || parts[1].isEmpty()) {
-+            return null;
-+        }
-+        final String set = parts[0].toLowerCase(java.util.Locale.ROOT);
-+        final String number = URLDecoder.decode(parts[1], StandardCharsets.UTF_8);
-+        String lang = parts.length > 2 ? parts[2].toLowerCase(java.util.Locale.ROOT) : "";
-+        if (lang.isEmpty()) {
-+            lang = "en";
-+        }
-+        // Ohne version liefert Scryfall "large".
-+        String size = "large";
-+        boolean back = false;
-+        for (final String p : query.split("&")) {
-+            if (p.startsWith("version=")) {
-+                size = p.substring("version=".length());
-+            } else if (p.equals("face=back")) {
-+                back = true;
-+            }
-+        }
-+        if (!size.matches("small|normal|large|png|art_crop|border_crop")) {
-+            return null;
-+        }
-+        return new Request(set, number, lang, size, "png".equals(size) ? "png" : "jpg", back);
-+    }
-+
-+    // ------------------------------------------------------------------
-+    // Index: Speicher, Platte, Scryfall
-+
-+    /** Der Index der Edition, wenn er schon da ist und diese Sprache kennt; sonst wird er geholt. */
-+    private static Index index(final Request r) {
-+        Index index = LOADED.get(r.set);
-+        if (index == null && !DISK_CHECKED.contains(r.set)) {
-+            // Synchronisiert: laeuft ein zweiter Download-Thread derselben Edition hier
-+            // durch, soll er auf die Platte warten statt eine Suche bei Scryfall anzustossen.
-+            synchronized (DISK_CHECKED) {
-+                index = LOADED.get(r.set);
-+                if (index == null && DISK_CHECKED.add(r.set)) {
-+                    index = readDisk(r.set);
-+                    if (index != null) {
-+                        LOADED.put(r.set, index);
-+                    }
-+                }
-+            }
-+        }
-+        if (index == null || !index.langs.contains(r.lang)) {
-+            queueSync(r.set, wantedLangs(index, r.lang));
-+            return index;
-+        }
-+        return index;
-+    }
-+
-+    /** Englisch (der Rueckfall), die Sprache des Spiels und die gefragte. */
-+    private static Set<String> wantedLangs(final Index have, final String asked) {
-+        final Set<String> langs = new LinkedHashSet<>();
-+        langs.add("en");
-+        final String ui = CardArt.language();
-+        if (ui != null) {
-+            langs.add(ui.toLowerCase(java.util.Locale.ROOT));
-+        }
-+        langs.add(asked);
-+        if (have != null) {
-+            langs.addAll(have.langs);
-+        }
-+        return langs;
-+    }
-+
-+    /** Fehlt einer Karte der Eintrag und ist der Index alt: einmal je Sitzung neu holen. */
-+    private static void maybeRefresh(final Request r, final Index index) {
-+        if (System.currentTimeMillis() - index.fetchedAt > STALE_MS && REFRESHED.add(r.set)) {
-+            queueSync(r.set, wantedLangs(index, r.lang));
-+        }
-+    }
-+
-+    private static void queueSync(final String set, final Set<String> langs) {
-+        final Long failedAt = FAILED.get(set);
-+        if (failedAt != null && System.currentTimeMillis() - failedAt < RETRY_FAILED_MS) {
-+            return;
-+        }
-+        if (ScryfallRateLimiter.isCoolingDown() || !SYNCING.add(set)) {
-+            return;
-+        }
-+        SYNC.submit(() -> {
-+            try {
-+                final Index fresh = fetch(set, langs);
-+                if (fresh == null) {
-+                    FAILED.put(set, System.currentTimeMillis());
-+                } else {
-+                    LOADED.put(set, fresh);
-+                    FAILED.remove(set);
-+                    writeDisk(set, fresh);
-+                    if (DEBUG) {
-+                        System.out.println("[neo-cdn] " + set + " " + fresh.langs + ": "
-+                                + fresh.uuids.size() + " Bilder im Index");
-+                    }
-+                }
-+            } catch (final RuntimeException e) {
-+                FAILED.put(set, System.currentTimeMillis());
-+                System.err.println("[neo-cdn] Index fuer " + set + " fehlgeschlagen: " + e);
-+            } finally {
-+                SYNCING.remove(set);
-+            }
-+        });
-+    }
-+
-+    /** Alle Drucke der Edition in diesen Sprachen, oder {@code null} bei einem Fehler. */
-+    private static Index fetch(final String set, final Set<String> langs) {
-+        final StringBuilder q = new StringBuilder("set:").append(set).append(" (");
-+        boolean first = true;
-+        for (final String l : langs) {
-+            q.append(first ? "" : " or ").append("lang:").append(l);
-+            first = false;
-+        }
-+        q.append(')');
-+        String url = SEARCH + "?unique=prints&include_extras=true&include_variations=true&q="
-+                + URLEncoder.encode(q.toString(), StandardCharsets.UTF_8);
-+        final Index index = new Index();
-+        index.langs.addAll(langs);
-+        index.fetchedAt = System.currentTimeMillis();
-+        try {
-+            while (url != null) {
-+                if (ScryfallRateLimiter.isCoolingDown()) {
-+                    return null;
-+                }
-+                ScryfallRateLimiter.acquire(url);
-+                final HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
-+                c.setConnectTimeout(10_000);
-+                c.setReadTimeout(20_000);
-+                c.setRequestProperty("Accept", "application/json");
-+                c.setRequestProperty("Accept-Encoding", "gzip");
-+                c.setRequestProperty("User-Agent", forge.neo.platform.NeoUserAgent.get());
-+                final int code = c.getResponseCode();
-+                ScryfallRateLimiter.noteIfRateLimited(code, url, c.getHeaderField("Retry-After"));
-+                if (code == 404) {
-+                    // Keine Karte in diesen Sprachen: ein leerer, aber vollstaendiger Index.
-+                    c.disconnect();
-+                    break;
-+                }
-+                if (code != 200) {
-+                    c.disconnect();
-+                    return null;
-+                }
-+                final JsonObject page;
-+                try (InputStream raw = c.getInputStream();
-+                     InputStream in = "gzip".equalsIgnoreCase(c.getContentEncoding())
-+                             ? new GZIPInputStream(raw) : raw) {
-+                    page = JsonParser.parseReader(new InputStreamReader(in, StandardCharsets.UTF_8))
-+                            .getAsJsonObject();
-+                }
-+                final JsonArray data = page.has("data") ? page.getAsJsonArray("data") : new JsonArray();
-+                for (final JsonElement el : data) {
-+                    add(index, el.getAsJsonObject());
-+                }
-+                url = page.has("has_more") && page.get("has_more").getAsBoolean() && page.has("next_page")
-+                        ? page.get("next_page").getAsString() : null;
-+            }
-+        } catch (final IOException | RuntimeException e) {
-+            if (DEBUG) {
-+                System.out.println("[neo-cdn] " + set + ": " + e);
-+            }
-+            return null;
-+        }
-+        return index;
-+    }
-+
-+    private static void add(final Index index, final JsonObject card) {
-+        final String number = str(card, "collector_number");
-+        final String lang = str(card, "lang");
-+        final String status = str(card, "image_status");
-+        if (number == null || lang == null || "missing".equals(status) || "placeholder".equals(status)) {
-+            return;
-+        }
-+        String front = null;
-+        String back = null;
-+        if (card.has("image_uris") && card.get("image_uris").isJsonObject()) {
-+            front = uuidOf(card.getAsJsonObject("image_uris"));
-+        } else if (card.has("card_faces") && card.get("card_faces").isJsonArray()) {
-+            final JsonArray faces = card.getAsJsonArray("card_faces");
-+            if (!faces.isEmpty() && faces.get(0).isJsonObject()
-+                    && faces.get(0).getAsJsonObject().has("image_uris")) {
-+                front = uuidOf(faces.get(0).getAsJsonObject().getAsJsonObject("image_uris"));
-+            }
-+            if (faces.size() > 1 && faces.get(1).isJsonObject()
-+                    && faces.get(1).getAsJsonObject().has("image_uris")) {
-+                back = uuidOf(faces.get(1).getAsJsonObject().getAsJsonObject("image_uris"));
-+            }
-+        }
-+        if (front == null) {
-+            return;
-+        }
-+        index.uuids.put(number + "|" + lang, new String[] {front, back});
-+        index.numbers.add(number);
-+    }
-+
-+    /** Die ID aus ".../normal/front/a/b/<id>.jpg?123", oder null, wenn es keine CDN-Adresse ist. */
-+    private static String uuidOf(final JsonObject imageUris) {
-+        final String url = imageUris.has("normal") ? imageUris.get("normal").getAsString() : null;
-+        if (url == null || !url.contains("cards.scryfall.io")) {
-+            return null;
-+        }
-+        final int q = url.indexOf('?');
-+        final String path = q >= 0 ? url.substring(0, q) : url;
-+        final String file = path.substring(path.lastIndexOf('/') + 1);
-+        final int dot = file.lastIndexOf('.');
-+        return dot > 0 ? file.substring(0, dot) : null;
-+    }
-+
-+    private static String str(final JsonObject o, final String key) {
-+        return o.has(key) && !o.get(key).isJsonNull() ? o.get(key).getAsString() : null;
-+    }
-+
-+    // ------------------------------------------------------------------
-+    // Platte: "# langs=en,de" / "# fetched=<ms>" / "nr<TAB>sprache<TAB>vorne<TAB>hinten|-"
-+
-+    private static File fileOf(final String set) {
-+        return new File(ForgeConstants.CACHE_DIR, "neo-cdn" + File.separator
-+                + set.replaceAll("[^a-z0-9_-]", "_") + ".txt");
-+    }
-+
-+    private static Index readDisk(final String set) {
-+        final File f = fileOf(set);
-+        if (!f.isFile()) {
-+            return null;
-+        }
-+        final Index index = new Index();
-+        try (BufferedReader in = Files.newBufferedReader(f.toPath(), StandardCharsets.UTF_8)) {
-+            String line;
-+            while ((line = in.readLine()) != null) {
-+                if (line.startsWith("# langs=")) {
-+                    for (final String l : line.substring("# langs=".length()).split(",")) {
-+                        if (!l.isBlank()) {
-+                            index.langs.add(l.trim());
-+                        }
-+                    }
-+                } else if (line.startsWith("# fetched=")) {
-+                    index.fetchedAt = Long.parseLong(line.substring("# fetched=".length()).trim());
-+                } else if (!line.isEmpty() && !line.startsWith("#")) {
-+                    final String[] p = line.split("\t");
-+                    if (p.length >= 3) {
-+                        index.uuids.put(p[0] + "|" + p[1],
-+                                new String[] {p[2], p.length > 3 && !"-".equals(p[3]) ? p[3] : null});
-+                        index.numbers.add(p[0]);
-+                    }
-+                }
-+            }
-+        } catch (final IOException | RuntimeException e) {
-+            return null;
-+        }
-+        return index.langs.isEmpty() ? null : index;
-+    }
-+
-+    private static void writeDisk(final String set, final Index index) {
-+        final File f = fileOf(set);
-+        try {
-+            Files.createDirectories(f.getParentFile().toPath());
-+            final File tmp = new File(f.getPath() + ".tmp");
-+            try (BufferedWriter out = Files.newBufferedWriter(tmp.toPath(), StandardCharsets.UTF_8)) {
-+                out.write("# langs=" + String.join(",", index.langs));
-+                out.newLine();
-+                out.write("# fetched=" + index.fetchedAt);
-+                out.newLine();
-+                for (final Map.Entry<String, String[]> e : index.uuids.entrySet()) {
-+                    final int bar = e.getKey().lastIndexOf('|');
-+                    out.write(e.getKey().substring(0, bar) + "\t" + e.getKey().substring(bar + 1) + "\t"
-+                            + e.getValue()[0] + "\t" + (e.getValue()[1] == null ? "-" : e.getValue()[1]));
-+                    out.newLine();
-+                }
-+            }
-+            Files.move(tmp.toPath(), f.toPath(), StandardCopyOption.REPLACE_EXISTING,
-+                    StandardCopyOption.ATOMIC_MOVE);
-+        } catch (final IOException | RuntimeException e) {
-+            System.err.println("[neo-cdn] Index fuer " + set + " nicht gespeichert: " + e);
-+        }
-+    }
-+}
-diff --git a/forge-gui-neo/src/main/java/forge/neo/deck/DeckContext.java b/forge-gui-neo/src/main/java/forge/neo/deck/DeckContext.java
-index 62832fc..8347b37 100644
---- a/forge-gui-neo/src/main/java/forge/neo/deck/DeckContext.java
-+++ b/forge-gui-neo/src/main/java/forge/neo/deck/DeckContext.java
-@@ -170,6 +170,19 @@ public interface DeckContext {
-         return pool() != null;
-     }
- 
-+    /**
-+     * Neo Forge 3D: ob der Deck-Editor hier die Draft-Bewertung auf den Karten
-+     * zeigt (wenn sie in den Einstellungen an ist, {@code DraftRating.shown}).
-+     *
-+     * <p>Nur beim Deckbau aus einem Draft- oder Sealed-Pool, lokal und im
-+     * Netz: dort ist die Zahl eine Hilfe bei der Wahl der 23 Karten. In einer
-+     * Sammlung (Quest, Aventura) oder bei konstruierten Decks sagt eine
-+     * Limited-Bewertung nichts.
-+     */
-+    default boolean showsDraftRanking() {
-+        return false;
-+    }
-+
-     /**
-      * Si un mazo de aqui puede llevar <b>reglas de la casa</b> ({@link HouseRules}):
-      * solo los de las partidas libres contra la IA. Quest, Ascenso, la Aventura,
-diff --git a/forge-gui-neo/src/main/java/forge/neo/draft/DraftDeckContext.java b/forge-gui-neo/src/main/java/forge/neo/draft/DraftDeckContext.java
-index 66ef185..a122b24 100644
---- a/forge-gui-neo/src/main/java/forge/neo/draft/DraftDeckContext.java
-+++ b/forge-gui-neo/src/main/java/forge/neo/draft/DraftDeckContext.java
-@@ -296,6 +296,12 @@ public final class DraftDeckContext implements DeckContext {
-         return true;
-     }
- 
-+    /** Neo Forge 3D: die Draft-Bewertung auch beim Deckbau (Draft und Sealed). */
-+    @Override
-+    public boolean showsDraftRanking() {
-+        return true;
-+    }
-+
-     @Override
-     public CardPool autoBuild(final List<PaperCard> cards) {
-         final Deck deck = humanDeck();
-diff --git a/forge-gui-neo/src/main/java/forge/neo/draft/DraftRating.java b/forge-gui-neo/src/main/java/forge/neo/draft/DraftRating.java
-new file mode 100644
-index 0000000..94b8bdb
---- /dev/null
-+++ b/forge-gui-neo/src/main/java/forge/neo/draft/DraftRating.java
-@@ -0,0 +1,65 @@
-+package forge.neo.draft;
-+
-+import forge.gamemodes.limited.CardRanker;
-+import forge.item.PaperCard;
-+import forge.neo.NeoSettings;
-+
-+/**
-+ * Die Bewertung einer Karte fuer Draft und Deckbau, 0-99.
-+ *
-+ * <p>Neo Forge 3D: Eine Stelle fuer die Zahl, damit der Draft-Bildschirm
-+ * ({@code DraftScreen}) und der Deck-Editor ({@code DeckBuilderScreen}) fuer
-+ * dieselbe Karte immer dieselbe Zahl zeigen. Sie kommt aus Forges
-+ * {@link CardRanker#getRawScore} (die Ranglisten in {@code res/draft/rankings},
-+ * bei Cubes die eigene Rangliste); eine Grundlandkarte ist dort absichtlich
-+ * "unpickable" (-100) und wird auf 0 gesetzt.
-+ */
-+public final class DraftRating {
-+
-+    /** Ab hier gruen: eine Karte, die man gern nimmt. */
-+    public static final int GOOD = 66;
-+    /** Darunter gedaempft: eine Karte, die meist auf der Bank bleibt. */
-+    public static final int POOR = 33;
-+
-+    private DraftRating() {
-+    }
-+
-+    /**
-+     * Was {@link CardRanker#getRawScore} fuer "keine Daten" liefert (dort
-+     * {@code SCORE_UNPICKABLE}, privat): Grundlaender UND jede Karte, die in
-+     * keiner Rangliste steht — etwa ein Set, fuer das Forge noch keine
-+     * {@code .rnk} mitbringt (Star Trek, TRK).
-+     */
-+    private static final double NO_DATA = -100.0;
-+
-+    /**
-+     * Die Zahl fuer diese Karte, 0-99, oder {@code null}, wenn Forge fuer sie
-+     * keine Bewertung hat. Frueher wurde daraus eine 0 — bei einem Set ohne
-+     * Rangliste stand dann auf JEDER Karte 0, als waeren alle gleich schlecht.
-+     * Grundlaender bleiben bei 0 (absichtlich "unpickable").
-+     */
-+    public static Integer of(final PaperCard card) {
-+        final double raw = CardRanker.getRawScore(card);
-+        if (raw <= NO_DATA && !DraftDeckContext.isBasic(card)) {
-+            return null;
-+        }
-+        return (int) Math.round(Math.max(0, Math.min(99, raw)));
-+    }
-+
-+    /**
-+     * Die Zahl, wenn sie in den Einstellungen eingeschaltet ist
-+     * ({@link NeoSettings#showDraftRanking}), sonst {@code null}. Genau das,
-+     * was {@code CardNode.setDraftRank} erwartet.
-+     */
-+    public static Integer shown(final PaperCard card) {
-+        return NeoSettings.showDraftRanking() && card != null ? of(card) : null;
-+    }
-+
-+    /**
-+     * Wie {@link #shown}, aber ohne Grundlaender: beim Deckbau stehen sie
-+     * unbegrenzt bereit, und eine 0 auf jeder Insel waere nur Rauschen.
-+     */
-+    public static Integer shownForDeck(final PaperCard card) {
-+        return DraftDeckContext.isBasic(card) ? null : shown(card);
-+    }
-+}
-diff --git a/forge-gui-neo/src/main/java/forge/neo/draft/NetPoolContext.java b/forge-gui-neo/src/main/java/forge/neo/draft/NetPoolContext.java
-index 9575e8c..ae327a8 100644
---- a/forge-gui-neo/src/main/java/forge/neo/draft/NetPoolContext.java
-+++ b/forge-gui-neo/src/main/java/forge/neo/draft/NetPoolContext.java
-@@ -145,6 +145,12 @@ public final class NetPoolContext implements DeckContext {
-         return true;
-     }
- 
-+    /** Neo Forge 3D: die Draft-Bewertung auch beim Deckbau im Netz. */
-+    @Override
-+    public boolean showsDraftRanking() {
-+        return true;
-+    }
-+
-     @Override
-     public forge.deck.CardPool autoBuild(final List<forge.item.PaperCard> cards) {
-         return LimitedAutoBuild.build(cards, null);
 diff --git a/forge-gui-neo/src/main/java/forge/neo/match/NeoGame.java b/forge-gui-neo/src/main/java/forge/neo/match/NeoGame.java
-index 4d3fc9a..df8ff3c 100644
+index 058fea1..0e17f46 100644
 --- a/forge-gui-neo/src/main/java/forge/neo/match/NeoGame.java
 +++ b/forge-gui-neo/src/main/java/forge/neo/match/NeoGame.java
-@@ -344,7 +344,23 @@ public final class NeoGame {
+@@ -391,7 +391,23 @@ public final class NeoGame {
              FModel.getPreferences().setPref(FPref.MATCH_AI_TIMEOUT, "2");
          }
  
@@ -885,7 +257,7 @@ index 4d3fc9a..df8ff3c 100644
          gui.setAutoPayMana(autoPayMana);
          gui.setEnding(ending);
          // Solo comprobadores: la interfaz de la partida, para hacer de jugador.
-@@ -352,7 +368,7 @@ public final class NeoGame {
+@@ -399,7 +415,7 @@ public final class NeoGame {
          if (forTest != null) {
              forTest.accept(gui);
          }
@@ -894,7 +266,7 @@ index 4d3fc9a..df8ff3c 100644
              gui.setBinder(binder);
              gui.setTable(binder.getTable());
              // El menu de pausa necesita poder decirle "sal de aqui".
-@@ -375,6 +391,11 @@ public final class NeoGame {
+@@ -424,6 +440,11 @@ public final class NeoGame {
              humanSeat = seating == null ? format.register(deck, seats)
                      : seating.human(deck, seats);
              humanSeat.setPlayer(forge.neo.look.NeoPlayers.human());
@@ -906,7 +278,7 @@ index 4d3fc9a..df8ff3c 100644
              players.add(humanSeat);
          }
  
-@@ -420,6 +441,10 @@ public final class NeoGame {
+@@ -469,6 +490,10 @@ public final class NeoGame {
          }
  
          match.setOnMatchOver(over::countDown);
@@ -917,7 +289,7 @@ index 4d3fc9a..df8ff3c 100644
  
          // El blindaje de la IA va SIEMPRE, no solo cuando hay algo mas que
          // hacer al empezar. Aqui el match se construye a mano (no sale de
-@@ -478,7 +503,7 @@ public final class NeoGame {
+@@ -528,7 +553,7 @@ public final class NeoGame {
          // FModel.getPreferences() y nadie la habria vuelto a mirar.
          applyNeoRules(rules);
  
@@ -926,7 +298,7 @@ index 4d3fc9a..df8ff3c 100644
              // Sin jugadores humanos, HostedMatch.startGame() registra el
              // espectador el solo pidiendo una GUI a IGuiBase. Solo hay que
              // decirle cual devolver.
-@@ -515,6 +540,9 @@ public final class NeoGame {
+@@ -565,6 +590,9 @@ public final class NeoGame {
                      timeoutSecs, turns);
          }
  
@@ -937,7 +309,7 @@ index 4d3fc9a..df8ff3c 100644
          // La vida ANTES de shutdown(): despues la vista ya no tiene por que
          // seguir en pie, y es el dato del que vive una run de Ascenso.
 diff --git a/forge-gui-neo/src/main/java/forge/neo/match/SafeAi.java b/forge-gui-neo/src/main/java/forge/neo/match/SafeAi.java
-index add98cb..da9fcf7 100644
+index 75236ed..78c91ff 100644
 --- a/forge-gui-neo/src/main/java/forge/neo/match/SafeAi.java
 +++ b/forge-gui-neo/src/main/java/forge/neo/match/SafeAi.java
 @@ -161,6 +161,11 @@ public final class SafeAi {
@@ -952,249 +324,173 @@ index add98cb..da9fcf7 100644
              final Guarded safe = new Guarded(game, p, p.getLobbyPlayer());
              // El perfil que el motor deduce del mazo se recalcula, no se
              // hereda: el campo es privado y su fuente — el mazo — sigue a mano.
-diff --git a/forge-gui-neo/src/main/java/forge/neo/platform/NeoImageFetcher.java b/forge-gui-neo/src/main/java/forge/neo/platform/NeoImageFetcher.java
-index e7738d9..995904b 100644
---- a/forge-gui-neo/src/main/java/forge/neo/platform/NeoImageFetcher.java
-+++ b/forge-gui-neo/src/main/java/forge/neo/platform/NeoImageFetcher.java
-@@ -194,16 +194,31 @@ public class NeoImageFetcher extends ImageFetcher {
- 
-         ThreadUtil.getServicePool().submit(() -> {
-             boolean ok = false;
--            try {
--                ok = doFetch(url, dest.getPath(), null);
--            } catch (final IOException e) {
-+            // Neo Forge 3D: nur eine ANTWORT von Scryfall sagt, dass es die Karte in
-+            // dieser Sprache nicht gibt. Ein Netzfehler (kein DNS, kein WLAN) sagt
-+            // nichts — frueher wurde die Uebersetzung dann fuer immer als fehlend
-+            // vermerkt, und die Karte blieb englisch.
-+            boolean answered = true;
-+            if (forge.neo.card.ScryfallCdn.knownAbsent(url)) {
-+                // Neo Forge 3D: der Index der Edition kennt die Karte, aber nicht in
-+                // dieser Sprache — die Anfrage (eine 404 im Takt der API) entfaellt.
-                 if (DEBUG) {
--                    System.out.println("[neo-img] " + lang + ": fallo " + url + " -> " + e);
-+                    System.out.println("[neo-img] " + lang + ": laut Index nicht vorhanden " + filename);
-+                }
+diff --git a/forge-gui-neo/src/main/java/forge/neo/quest/NeoQuestMatch.java b/forge-gui-neo/src/main/java/forge/neo/quest/NeoQuestMatch.java
+index a7fa630..c196270 100644
+--- a/forge-gui-neo/src/main/java/forge/neo/quest/NeoQuestMatch.java
++++ b/forge-gui-neo/src/main/java/forge/neo/quest/NeoQuestMatch.java
+@@ -101,10 +101,30 @@ public final class NeoQuestMatch {
+             System.out.println("[quest] no se juega el duelo: " + problem);
+             return null;
+         }
+-        final NeoMatchUI gui = new NeoMatchUI(mode, false);
++        // Neo Forge 3D: ein Quest-Duell ist immer 1 gegen 1 -- der Mensch spielt am 3D-Tisch
++        // (Godot), NeoMatchUI schaut nur unsichtbar zu, wie in NeoGame. Fensteruebergabe: der
++        // Tisch oeffnet sich, wo NeoForges Fenster ist. Startet er nicht, bleibt alles wie bisher.
++        final java.util.Set<forge.game.GameType> variants3d = java.util.EnumSet.of(forge.game.GameType.Quest);
++        if (forge.model.FModel.getQuest().getDeckConstructionRules()
++                == forge.gamemodes.quest.data.DeckConstructionRules.Commander) {
++            variants3d.add(forge.game.GameType.Commander);
++        }
++        final boolean want3d = mode == NeoMatchUI.Mode.HUMAN
++                && forge.neo.clash.ClashTable.useFor(1, false, variants3d);
++        if (want3d && binder != null) {
++            binder.setPrompt(forge.neo.NeoText.get("clash.playing"));
++        }
++        final javafx.stage.Stage window3d = want3d && binder != null
++                ? forge.neo.clash.ClashTable.stageOf(binder.getTable()) : null;
++        final clash.forgebridge.TableLauncher.Session table3d =
++                want3d ? forge.neo.clash.ClashTable.open(window3d) : null;
++        final java.util.concurrent.atomic.AtomicReference<Table3dMatch> match3d =
++                new java.util.concurrent.atomic.AtomicReference<>();
++
++        final NeoMatchUI gui = new NeoMatchUI(table3d != null ? NeoMatchUI.Mode.OBSERVE : mode, false);
+         gui.setEnding(NeoMatchUI.Ending.QUEST);
+         gui.setAutoPayMana(autoPayMana);
+-        if (binder != null) {
++        if (binder != null && table3d == null) {
+             gui.setBinder(binder);
+             gui.setTable(binder.getTable());
+             binder.setMatchUi(gui);
+@@ -116,7 +136,15 @@ public final class NeoQuestMatch {
+             // Con la vida baja marcada, otro match que la baja al arrancar; y
+             // como es otro objeto, con su IA blindada (NeoGuiBase.hostMatch se
+             // la puso al de antes).
+-            final forge.gamemodes.match.HostedMatch match = QuestLowLife.replace(created, duel);
++            final forge.gamemodes.match.HostedMatch match;
++            if (table3d != null) {
++                // Neo Forge 3D: ein Match, das den Sitz des Spielers an den 3D-Tisch haengt
++                final Table3dMatch m = new Table3dMatch(duel);
++                match3d.set(m);
++                match = m;
 +            } else {
-+                try {
-+                    ok = doFetch(url, dest.getPath(), null);
-+                } catch (final IOException e) {
-+                    answered = false;
-+                    if (DEBUG) {
-+                        System.out.println("[neo-img] " + lang + ": fallo " + url + " -> " + e);
-+                    }
-+                } catch (final RuntimeException e) {
-+                    answered = false;
-+                    System.err.println("[neo-img] error pidiendo " + url + ": " + e);
-                 }
--            } catch (final RuntimeException e) {
--                System.err.println("[neo-img] error pidiendo " + url + ": " + e);
++                match = QuestLowLife.replace(created, duel);
++            }
+             if (match != created) {
+                 match.setStartGameHook(forge.neo.match.SafeAi.hook(match, null));
              }
--            if (!ok && !ScryfallRateLimiter.isCoolingDown()) {
-+            if (!ok && answered && !ScryfallRateLimiter.isCoolingDown()) {
-                 // Que una carta no exista en este idioma es lo normal, no un
-                 // error. Se anota para no volver a preguntarlo cada arranque —
-                 // pero NO si lo que ha pasado es que nos han cortado, porque
-@@ -277,9 +292,6 @@ public class NeoImageFetcher extends ImageFetcher {
-         if (disableHostedDownload && urlToDownload.startsWith(ForgeConstants.URL_CARDFORGE)) {
-             return false;
-         }
--        if (ScryfallRateLimiter.shouldSkip(urlToDownload)) {
--            return false;
--        }
- 
-         // Scryfall sirve las cartas con borde completo; Forge nombra ese fichero
-         // .fullborder.jpg en vez de .full.jpg.
-@@ -289,6 +301,31 @@ public class NeoImageFetcher extends ImageFetcher {
-             destination = TextUtil.fastReplace(destination, ".full.jpg", ".fullborder.jpg");
+@@ -141,6 +169,15 @@ public final class NeoQuestMatch {
+         } finally {
+             restoreRival.run();
+             NeoGuiBase.setOnMatchCreated(null);
++            if (table3d != null) {
++                // Vor der Auswertung: Forge sucht den Sieger ueber den Quest-Spieler
++                // (GamePlayerUtil.getQuestPlayer), nicht ueber den des 3D-Tischs.
++                final Table3dMatch m = match3d.get();
++                if (m != null) {
++                    m.restoreQuestPlayer();
++                }
++                forge.neo.clash.ClashTable.close(table3d, window3d);
++            }
          }
  
-+        // Neo Forge 3D: zuerst direkt von der CDN (cards.scryfall.io, ohne Limit),
-+        // wenn der Index der Edition die ID kennt — auch waehrend Scryfall die API
-+        // gerade sperrt. Klappt das nicht, geht es wie bisher ueber die API.
-+        final String cdn = forge.neo.card.ScryfallCdn.cdnFor(urlToDownload);
-+        if (cdn != null) {
-+            try {
-+                if (download(cdn, destination, notifyObservers)) {
-+                    return true;
-+                }
-+            } catch (final IOException e) {
-+                if (DEBUG) {
-+                    System.out.println("[neo-img] CDN fehlgeschlagen " + cdn + ": " + e);
-+                }
+         final NeoQuestRewards rewards = NeoQuestRewards.apply(gui.getGameView());
+@@ -148,4 +185,51 @@ public final class NeoQuestMatch {
+         gui.shutdown();
+         return new Outcome(rewards, exit);
+     }
++
++    /**
++     * Neo Forge 3D: das Match eines Quest-Duells am 3D-Tisch. Forge ({@code QuestUtil}) baut die
++     * Sitze selbst und gibt den des Spielers mit seiner Oberflaeche herein; hier rueckt er auf
++     * Sitzplatz 0 und bekommt den ferngesteuerten Spieler des Tisches (gleicher Name). Die Partie
++     * startet dann ohne menschliche Oberflaeche -- NeoMatchUI schaut als Zuschauer zu (Fabrik in
++     * {@link NeoGuiBase}). Die Vida baja ({@link QuestLowLife}) gilt auch hier.
++     */
++    private static final class Table3dMatch extends forge.gamemodes.match.HostedMatch {
++        private final QuestEvent duel;
++        private forge.game.player.RegisteredPlayer seat;
++        private forge.LobbyPlayer questPlayer;
++
++        Table3dMatch(final QuestEvent duel) {
++            this.duel = duel;
++        }
++
++        @Override
++        public void startMatch(final forge.game.GameRules rules, final java.util.Set<forge.game.GameType> variants,
++                               final java.util.List<forge.game.player.RegisteredPlayer> players,
++                               final java.util.Map<forge.game.player.RegisteredPlayer, forge.gui.interfaces.IGuiGame> guis,
++                               final forge.sound.MusicPlaylist playlist) {
++            final forge.game.player.RegisteredPlayer me = guis == null || guis.size() != 1
++                    ? null : guis.keySet().iterator().next();
++            if (me == null || !players.contains(me) || players.size() != 2) {
++                // Kommt bei der Quest nicht vor; dann ohne Tisch weiter wie Forge es will.
++                super.startMatch(rules, variants, players, guis, playlist);
++                return;
++            }
++            QuestLowLife.lower(me, duel);
++            final java.util.List<forge.game.player.RegisteredPlayer> seats = new java.util.ArrayList<>(players);
++            seats.remove(me);
++            seats.add(0, me);
++            seat = me;
++            questPlayer = me.getPlayer();
++            me.setPlayer(forge.neo.clash.ClashTable.player(questPlayer.getName(), 0));
++            forge.neo.clash.ClashTable.sendLook(seats);
++            super.startMatch(rules, variants, seats, null, playlist);
++        }
++
++        /** Den Sitz wieder Forges Quest-Spieler geben (fuer Sieg, Belohnungen, Statistik). */
++        void restoreQuestPlayer() {
++            if (seat != null && questPlayer != null) {
++                seat.setPlayer(questPlayer);
 +            }
 +        }
-+
-+        if (ScryfallRateLimiter.shouldSkip(urlToDownload)) {
-+            return false;
-+        }
-+        return download(urlToDownload, destination, notifyObservers);
 +    }
-+
-+    /** Eine Adresse in eine Datei; die API-Anfragen ueber Forges Takt ({@link ScryfallRateLimiter}). */
-+    private boolean download(final String urlToDownload, final String destination,
-+                             final Runnable notifyObservers) throws IOException {
-         final URL url = new URL(urlToDownload);
-         ScryfallRateLimiter.acquire(urlToDownload);
- 
-diff --git a/forge-gui-neo/src/main/java/forge/neo/ui/DeckBuilderScreen.java b/forge-gui-neo/src/main/java/forge/neo/ui/DeckBuilderScreen.java
-index f94399d..41c5e03 100644
---- a/forge-gui-neo/src/main/java/forge/neo/ui/DeckBuilderScreen.java
-+++ b/forge-gui-neo/src/main/java/forge/neo/ui/DeckBuilderScreen.java
-@@ -2164,6 +2164,7 @@ public class DeckBuilderScreen extends StackPane {
-         node.setRotationEnabled(false);
-         node.setBadgesVisible(false);
-         node.setCard(CardView.getCardForUi(card));
-+        node.setDraftRank(rankOf(card));
- 
-         final Label count = new Label();
-         count.getStyleClass().add("catalogue-count");
-@@ -2571,6 +2572,7 @@ public class DeckBuilderScreen extends StackPane {
-         steps.setVisible(true);
- 
-         final HBox content = new HBox(7, qty, name, lacking, cost, steps);
-+        addRankPill(content, card);
-         content.setAlignment(Pos.CENTER_LEFT);
-         content.setPadding(new Insets(7, 8, 7, 8));
-         final StackPane row = new StackPane(new DeckArtStrip(card), content);
-@@ -2627,6 +2629,7 @@ public class DeckBuilderScreen extends StackPane {
-         node.setRotationEnabled(false);
-         node.setBadgesVisible(false);
-         node.setCard(forge.game.card.CardView.getCardForUi(card));
-+        node.setDraftRank(rankOf(card));
-         final StackPane tile = new StackPane(node);
-         tile.getStyleClass().add("deck-tile");
-         if (amount > 1) {
-@@ -2687,6 +2690,7 @@ public class DeckBuilderScreen extends StackPane {
-             refreshCatalogue();
-         });
-         final HBox content = new HBox(7, qty, name, manaCost(card), new HBox(2, toMain, less));
-+        addRankPill(content, card);
-         content.setAlignment(Pos.CENTER_LEFT);
-         content.setPadding(new Insets(7, 8, 7, 8));
-         final StackPane row = new StackPane(new DeckArtStrip(card), content);
-@@ -4204,6 +4208,50 @@ public class DeckBuilderScreen extends StackPane {
-         }
-     }
- 
-+    /**
-+     * Neo Forge 3D: die Draft-Bewertung wurde in den Einstellungen umgeschaltet,
-+     * waehrend dieser Editor offen ist. Wie im Draft soll das sofort zu sehen
-+     * sein, nicht erst beim naechsten Klick: Katalog und Deck neu aufbauen.
-+     */
-+    public void refreshRanking() {
-+        if (!editor.getFormat().showsDraftRanking()) {
-+            return;
-+        }
-+        refreshCatalogue();
-+        refreshDeck();
-+    }
-+
-+    /**
-+     * Neo Forge 3D: die Draft-Bewertung einer Karte beim Deckbau, oder null.
-+     * Nur in einem Draft- oder Sealed-Pool ({@code DeckContext.showsDraftRanking})
-+     * und nur, wenn sie in den Einstellungen an ist; Grundlaender ohne Zahl.
-+     */
-+    private Integer rankOf(final PaperCard card) {
-+        return editor.getFormat().showsDraftRanking()
-+                ? forge.neo.draft.DraftRating.shownForDeck(card) : null;
-+    }
-+
-+    /**
-+     * Neo Forge 3D: die Bewertung als kleine Pastille in einer Listenzeile des
-+     * Decks oder der Bank, gleich hinter der Anzahl. Die Farben sind die der
-+     * Pastille auf der Karte (gruen gut, gedaempft schwach).
-+     */
-+    private void addRankPill(final HBox content, final PaperCard card) {
-+        final Integer rank = rankOf(card);
-+        if (rank == null) {
-+            return;
-+        }
-+        final Label pill = new Label(String.valueOf(rank));
-+        pill.getStyleClass().add("deck-row-rank");
-+        pill.pseudoClassStateChanged(javafx.css.PseudoClass.getPseudoClass("rank-good"),
-+                rank >= forge.neo.draft.DraftRating.GOOD);
-+        pill.pseudoClassStateChanged(javafx.css.PseudoClass.getPseudoClass("rank-poor"),
-+                rank < forge.neo.draft.DraftRating.POOR);
-+        javafx.scene.control.Tooltip.install(pill,
-+                new javafx.scene.control.Tooltip(NeoText.get("deck.draftRanking.tip")));
-+        content.getChildren().add(1, pill);
-+    }
-+
-     /** Guarda con ese nombre y sale, como Guardar + Volver (prueba de la sala). */
-     public void saveLeaveForTest(final String name) {
-         editor.setName(name);
-diff --git a/forge-gui-neo/src/main/java/forge/neo/ui/DraftScreen.java b/forge-gui-neo/src/main/java/forge/neo/ui/DraftScreen.java
-index 60a71cc..98b7aa1 100644
---- a/forge-gui-neo/src/main/java/forge/neo/ui/DraftScreen.java
-+++ b/forge-gui-neo/src/main/java/forge/neo/ui/DraftScreen.java
-@@ -5,7 +5,6 @@ import java.util.List;
- import java.util.function.Consumer;
- 
- import forge.game.card.CardView;
--import forge.gamemodes.limited.CardRanker;
- import forge.item.PaperCard;
- import forge.neo.NeoSettings;
- import forge.neo.card.CardNode;
-@@ -287,7 +286,6 @@ public class DraftScreen extends BorderPane {
-                 draft.round(), draft.pickNumber(), draft.cardsLeft()));
- 
-         pack.getChildren().clear();
--        final boolean showRanking = NeoSettings.showDraftRanking();
-         int i = 0;
-         // Como en Arena: por rareza, y la tierra basica al final (PackOrder).
-         for (final PaperCard pc : forge.neo.draft.PackOrder.sort(draft.currentCards())) {
-@@ -296,8 +294,10 @@ public class DraftScreen extends BorderPane {
-             node.setCard(view);
-             // Detras de casilla en Ajustes (NeoSettings.DRAFT_RANKING): a quien
-             // ya sabe draftear el numero le da la respuesta antes de pensarla.
--            node.setDraftRank(showRanking ? (int) Math.round(
--                    Math.max(0, Math.min(99, CardRanker.getRawScore(pc)))) : null);
-+            node.setDraftRank(forge.neo.draft.DraftRating.shown(pc));
-+            // Neo Forge 3D: die Karte merkt sich der Knoten selbst, damit
-+            // refreshRanking() die Zahl nicht ueber die Position zuordnen muss.
-+            node.setUserData(pc);
-             node.hoverProperty().addListener((o, was, is) -> {
-                 if (is) {
-                     detail.show(view);
-@@ -613,16 +613,14 @@ public class DraftScreen extends BorderPane {
-      * el resto de {@code SettingsPanel}, que no lleva boton de "guardar").
-      */
-     public void refreshRanking() {
--        final boolean showRanking = NeoSettings.showDraftRanking();
--        final List<PaperCard> cards = draft.currentCards();
--        int i = 0;
-+        // Neo Forge 3D: frueher ueber die Position in draft.currentCards() —
-+        // die ist aber UNSORTIERT, der Booster steht nach PackOrder sortiert
-+        // da. Wer die Bewertung mitten im Draft einschaltete, bekam die Zahlen
-+        // auf den falschen Karten. Jetzt traegt jeder Knoten seine Karte.
-         for (final javafx.scene.Node n : pack.getChildren()) {
--            if (i >= cards.size()) {
--                break;
-+            if (n instanceof CardNode && n.getUserData() instanceof PaperCard) {
-+                ((CardNode) n).setDraftRank(forge.neo.draft.DraftRating.shown((PaperCard) n.getUserData()));
-             }
--            ((CardNode) n).setDraftRank(showRanking ? (int) Math.round(
--                    Math.max(0, Math.min(99, CardRanker.getRawScore(cards.get(i))))) : null);
--            i++;
-         }
-     }
  }
+diff --git a/forge-gui-neo/src/main/java/forge/neo/quest/QuestLowLife.java b/forge-gui-neo/src/main/java/forge/neo/quest/QuestLowLife.java
+index cc4e32c..8e3ef54 100644
+--- a/forge-gui-neo/src/main/java/forge/neo/quest/QuestLowLife.java
++++ b/forge-gui-neo/src/main/java/forge/neo/quest/QuestLowLife.java
+@@ -113,6 +113,20 @@ public final class QuestLowLife {
+         return new Lowered(drop);
+     }
+ 
++    /**
++     * Neo Forge 3D: baja la vida de {@code seat} como {@link #replace} (nada si
++     * no esta marcada o el duelo fija la vida). Para el 3D-Tisch, donde el
++     * asiento del jugador ya no llega al motor con interfaz.
++     */
++    public static void lower(final RegisteredPlayer seat, final QuestEvent event) {
++        final int drop = drop();
++        if (seat == null || drop <= 0 || fixedLife(event)) {
++            return;
++        }
++        seat.setStartingLife(Math.max(1, seat.getStartingLife() - drop));
++        lastApplied = seat.getStartingLife();
++    }
++
+     /** Baja la vida de los asientos con interfaz (el jugador) antes de empezar. */
+     private static final class Lowered extends HostedMatch {
+         private final int drop;
 diff --git a/forge-gui-neo/src/main/java/forge/neo/ui/SettingsPanel.java b/forge-gui-neo/src/main/java/forge/neo/ui/SettingsPanel.java
-index af7b7e5..2bdaca0 100644
+index 9cf4ba3..c9b7eb5 100644
 --- a/forge-gui-neo/src/main/java/forge/neo/ui/SettingsPanel.java
 +++ b/forge-gui-neo/src/main/java/forge/neo/ui/SettingsPanel.java
-@@ -971,6 +971,35 @@ public class SettingsPanel extends VBox {
+@@ -1002,6 +1002,40 @@ public class SettingsPanel extends VBox {
  
          tab(Tab.TABLE);
  
 +        // --- Neo Forge 3D: 3D-Tisch (Godot) als Spieltisch im 1 gegen 1 ---
 +        // Gilt ab der naechsten Partie; siehe forge.neo.clash.ClashTable.useFor.
 +        getChildren().add(section(NeoText.get("settings.clash")));
-+        getChildren().add(toggleRow(NeoText.get("settings.clash.on"),
-+                forge.neo.clash.ClashTable.isEnabled(),
-+                on -> {
-+                    NeoSettings.setBool(forge.neo.clash.ClashTable.SETTING_ON, on);
++        // Auswahl 2D (NeoForges Tisch) oder 3D (Godot); mit mehr als zwei Spielern immer 2D
++        // (ClashTable.useFor), egal was hier steht.
++        final String table2d = NeoText.get("settings.clash.2d");
++        final String table3d = NeoText.get("settings.clash.3d");
++        getChildren().add(choiceRow(NeoText.get("settings.clash.on"),
++                new String[] {table2d, table3d},
++                forge.neo.clash.ClashTable.isEnabled() ? table3d : table2d,
++                v -> {
++                    NeoSettings.setBool(forge.neo.clash.ClashTable.SETTING_ON, table3d.equals(v));
 +                    NeoSettings.save();
 +                }));
 +        final Label clashNote = new Label(NeoText.get("settings.clash.note"));
@@ -1220,7 +516,7 @@ index af7b7e5..2bdaca0 100644
          // --- la ronda al lado del turno ---
          //
          // Discord, 13-10-2026: "Turn 23 (Round 12)", para quien lleva la
-@@ -2548,6 +2577,19 @@ public class SettingsPanel extends VBox {
+@@ -2699,6 +2733,19 @@ public class SettingsPanel extends VBox {
                  v -> onChange.accept(yes.equals(v)));
      }
  
@@ -1241,33 +537,18 @@ index af7b7e5..2bdaca0 100644
          return Math.max(lo, Math.min(hi, v));
      }
 diff --git a/forge-gui-neo/src/main/resources/forge/neo/lang/neo-ar-MA.properties b/forge-gui-neo/src/main/resources/forge/neo/lang/neo-ar-MA.properties
-index 27e29e8..219382e 100644
+index 197328f..9b38144 100644
 --- a/forge-gui-neo/src/main/resources/forge/neo/lang/neo-ar-MA.properties
 +++ b/forge-gui-neo/src/main/resources/forge/neo/lang/neo-ar-MA.properties
-@@ -739,6 +739,7 @@ deck.oneHand.tip = في محرر الرزم فقط: تبويبات الفهرس/
- deck.showAll = كل البطاقات
- deck.showAll.tip = مع «كل البطاقات» يمكنك إضافة بطاقات لا تملكها بعد: تُحفظ المجموعة، لكن لا يمكنك اللعب بها حتى تحصل عليها.
- deck.missing = ناقص {0}
-+deck.draftRanking.tip = تقييم Draft (0–99): كلما ارتفع كانت البطاقة أقوى في Limited
- 
- deck.import.missing = {0} من هذه البطاقات لا تملكها بعد. تُحفظ الرزمة، لكن لا يمكنك اللعب بها حتى تحصل عليها.
- deck.removeMissing = إزالة ما لا أملكه
-@@ -1564,7 +1565,7 @@ adventure.autosell.many = نقل {0} إلى البيع التلقائي
- adventure.autosell.back = استعادة 1 من البيع التلقائي
- adventure.autosell.backAll = استعادة الكل ({0}) من البيع التلقائي
- adventure.autosell.noSpare = كل نسخة تملكها موجودة في رزمة
--settings.draftRanking = إظهار تقييم على كل بطاقة في Draft
-+settings.draftRanking = إظهار تقييم على كل بطاقة في Draft وعند بناء المجموعة
- settings.autoSell = بيع البطاقات المكررة تلقائيًا
- settings.questTrophy = بطاقة غنيمة من مجموعة الخصم عند الفوز
- settings.autoSell.hint = بعد كل مبارزة. يُبقي نسخة من كل رسم، فلا تضيع أي طبعة، وما يُباع يعود إلى المتجر.
-@@ -2933,6 +2934,12 @@ over.replay = إغلاق الإعادة
+@@ -3065,6 +3065,14 @@ over.replay = إغلاق الإعادة
  menu.replays = الإعادات
  settings.replays = الإعادات
  settings.replays.on = تسجيل مبارياتي لمشاهدتها مرة أخرى
 +settings.clash = الطاولة ثلاثية الأبعاد (NEO FORGE 3D)
-+settings.clash.on = لعب مباريات 1 ضد 1 على الطاولة ثلاثية الأبعاد
-+settings.clash.note = فقط للمباريات الثنائية (وCommander 1 ضد 1 أيضًا). مع لاعبين أكثر، أو لاعبَين على نفس الحاسوب، أو مع Planechase تلعب على الطاولة العادية. يسري من المباراة القادمة.
++settings.clash.on = طاولة اللعب
++settings.clash.2d = طاولة ثنائية الأبعاد
++settings.clash.3d = طاولة ثلاثية الأبعاد
++settings.clash.note = للمباريات الثنائية (وCommander 1 ضد 1 والمهمة والمغامرة أيضًا). مع أكثر من لاعبَين، أو لاعبَين على نفس الحاسوب، أو مع Planechase أو Archenemy أو Vanguard تُستخدم دائمًا الطاولة ثنائية الأبعاد. يسري من المباراة القادمة.
 +settings.clash.godot = برنامج Godot
 +settings.clash.project = مجلد مشروع Neo Forge 3D (godot)
 +clash.playing = المباراة تجري في نافذة الطاولة ثلاثية الأبعاد.
@@ -1275,33 +556,18 @@ index 27e29e8..219382e 100644
  settings.replays.assocRemove = التوقف عن فتح ‎.frp‎ بـ Neo Forge
  settings.replays.assocNote = انقر مرتين على إعادة (‎.frp‎) في ويندوز فتُفتح هنا في الإعادات. إذا نقلت مجلد اللعبة، اضغط مرة أخرى.
 diff --git a/forge-gui-neo/src/main/resources/forge/neo/lang/neo-de-DE.properties b/forge-gui-neo/src/main/resources/forge/neo/lang/neo-de-DE.properties
-index a362087..b8b3742 100644
+index 0a2c95e..f81a2cf 100644
 --- a/forge-gui-neo/src/main/resources/forge/neo/lang/neo-de-DE.properties
 +++ b/forge-gui-neo/src/main/resources/forge/neo/lang/neo-de-DE.properties
-@@ -743,6 +743,7 @@ deck.oneHand.tip = Nur im Deck-Editor: Die Reiter Katalog/Deck, Karten/Kommandeu
- deck.showAll = Alle Karten
- deck.showAll.tip = Mit „Alle Karten“ kannst du Karten hinzufügen, die du noch nicht hast: Das Deck wird gespeichert, ist aber erst spielbar, wenn du sie hast.
- deck.missing = fehlt {0}
-+deck.draftRanking.tip = Draft-Bewertung (0–99): je höher, desto stärker im Limited
- deck.import.missing = {0} dieser Karten hast du noch nicht. Das Deck wird gespeichert, aber du kannst es erst spielen, wenn du sie hast.
- deck.removeMissing = Nicht besessene entfernen
- deck.removeMissing.ask = Das entfernt {0} Exemplare von Karten, die du nicht hast:
-@@ -1565,7 +1566,7 @@ adventure.autosell.many = {0} zum Autoverkauf
- adventure.autosell.back = 1 aus dem Autoverkauf zurückholen
- adventure.autosell.backAll = Alle {0} aus dem Autoverkauf zurückholen
- adventure.autosell.noSpare = Alle deine Exemplare stecken in einem Deck
--settings.draftRanking = Bewertung auf jeder Karte im Draft zeigen
-+settings.draftRanking = Bewertung auf jeder Karte im Draft und beim Deckbau zeigen
- settings.autoSell = Doppelte Karten automatisch verkaufen
- settings.questTrophy = Eine Trophäenkarte aus dem Deck des Gegners, wenn du gewinnst
- settings.autoSell.hint = Nach jedem Duell. Behält eins von jedem Artwork, damit keine Ausgabe verloren geht, und das Verkaufte kommt zurück in den Laden.
-@@ -2934,6 +2935,12 @@ over.replay = Wiederholung schließen
+@@ -3066,6 +3066,14 @@ over.replay = Wiederholung schließen
  menu.replays = Wiederholungen
  settings.replays = WIEDERHOLUNGEN
  settings.replays.on = Meine Partien aufzeichnen, um sie erneut anzusehen
 +settings.clash = 3D-TISCH (NEO FORGE 3D)
-+settings.clash.on = Partien 1 gegen 1 am 3D-Tisch spielen
-+settings.clash.note = Nur für Partien zu zweit (auch Commander 1 gegen 1). Mit mehr Spielern, zu zweit am selben Rechner oder mit Planechase spielst du am normalen Tisch. Gilt ab der nächsten Partie.
++settings.clash.on = Spieltisch
++settings.clash.2d = 2D-Tisch
++settings.clash.3d = 3D-Tisch
++settings.clash.note = Gilt für Partien zu zweit (auch Commander 1 gegen 1, Quest und Adventure). Mit mehr als zwei Spielern, zu zweit am selben Rechner oder mit Planechase, Archenemy oder Vanguard wird immer der 2D-Tisch genommen. Gilt ab der nächsten Partie.
 +settings.clash.godot = Godot-Programm
 +settings.clash.project = Projektordner von Neo Forge 3D (godot)
 +clash.playing = Die Partie läuft im Fenster des 3D-Tischs.
@@ -1309,33 +575,18 @@ index a362087..b8b3742 100644
  settings.replays.assocRemove = .frp-Dateien nicht mehr mit Neo Forge öffnen
  settings.replays.assocNote = Doppelklicke in Windows auf eine Wiederholung (.frp), und sie öffnet sich hier unter Wiederholungen. Wenn du den Spielordner verschiebst, drück es erneut.
 diff --git a/forge-gui-neo/src/main/resources/forge/neo/lang/neo-en-US.properties b/forge-gui-neo/src/main/resources/forge/neo/lang/neo-en-US.properties
-index 3199219..216fdd2 100644
+index 3913dad..245c08d 100644
 --- a/forge-gui-neo/src/main/resources/forge/neo/lang/neo-en-US.properties
 +++ b/forge-gui-neo/src/main/resources/forge/neo/lang/neo-en-US.properties
-@@ -739,6 +739,7 @@ deck.oneHand.tip = Only in the deck editor: the Catalog/Deck, Cards/Commander an
- deck.showAll = All cards
- deck.showAll.tip = With "All cards" you can add cards you don't own yet: the deck saves, but you can't play it until you get them.
- deck.missing = missing {0}
-+deck.draftRanking.tip = Draft rating (0–99): the higher, the stronger in Limited
- deck.import.missing = {0} of these cards you don't own yet. The deck is saved, but you can't play it until you get them.
- deck.removeMissing = Remove cards I don't own
- deck.removeMissing.ask = This removes {0} copies of cards you don't own:
-@@ -1561,7 +1562,7 @@ adventure.autosell.many = Move {0} to auto-sell
- adventure.autosell.back = Take 1 back from auto-sell
- adventure.autosell.backAll = Take all {0} back from auto-sell
- adventure.autosell.noSpare = Every copy you own is in a deck
--settings.draftRanking = Show a rating on each card in the draft
-+settings.draftRanking = Show a rating on each card in the draft and in deck building
- settings.autoSell = Sell duplicate cards automatically
- settings.questTrophy = Win a trophy card from your opponent's deck
- settings.autoSell.hint = After each duel. Keeps one of every art, so no printing is lost, and what is sold goes back to the shop.
-@@ -2930,6 +2931,12 @@ over.replay = Close the replay
+@@ -3062,6 +3062,14 @@ over.replay = Close the replay
  menu.replays = Replays
  settings.replays = REPLAYS
  settings.replays.on = Record my games to watch them again
 +settings.clash = 3D TABLE (NEO FORGE 3D)
-+settings.clash.on = Play 1 vs 1 games on the 3D table
-+settings.clash.note = Only for two-player games (Commander 1 vs 1 too). With more players, two people on one computer or Planechase you play on the normal table. Applies from the next game.
++settings.clash.on = Game table
++settings.clash.2d = 2D table
++settings.clash.3d = 3D table
++settings.clash.note = Applies to two-player games (Commander 1 vs 1, Quest and Adventure too). With more than two players, two people on one computer, or Planechase, Archenemy or Vanguard, the 2D table is always used. Applies from the next game.
 +settings.clash.godot = Godot program
 +settings.clash.project = Neo Forge 3D project folder (godot)
 +clash.playing = The game is running in the 3D table window.
@@ -1343,33 +594,18 @@ index 3199219..216fdd2 100644
  settings.replays.assocRemove = Stop opening .frp files with Neo Forge
  settings.replays.assocNote = Double-click a replay (.frp) in Windows and it opens here, in Replays. If you move the game folder, press it again.
 diff --git a/forge-gui-neo/src/main/resources/forge/neo/lang/neo-es-ES.properties b/forge-gui-neo/src/main/resources/forge/neo/lang/neo-es-ES.properties
-index 1912b66..86ebccd 100644
+index 4f5c93d..955e596 100644
 --- a/forge-gui-neo/src/main/resources/forge/neo/lang/neo-es-ES.properties
 +++ b/forge-gui-neo/src/main/resources/forge/neo/lang/neo-es-ES.properties
-@@ -743,6 +743,7 @@ deck.oneHand.tip = Solo en el editor de mazos: las pestañas Catálogo/Mazo, Car
- deck.showAll = Todas las cartas
- deck.showAll.tip = Con «Todas las cartas» puedes meter cartas que aún no tienes: el mazo se guarda, pero no se puede jugar hasta que las consigas.
- deck.missing = falta {0}
-+deck.draftRanking.tip = Rating de draft (0–99): cuanto más alto, más fuerte en limitado
- deck.import.missing = {0} de estas cartas aún no las tienes. El mazo se guarda, pero no se puede jugar hasta que las consigas.
- deck.removeMissing = Quitar las que no tengo
- deck.removeMissing.ask = Se quitarán {0} copias de cartas que no tienes:
-@@ -1566,7 +1567,7 @@ adventure.autosell.many = Pasar {0} a autovender
- adventure.autosell.back = Sacar 1 de autovender
- adventure.autosell.backAll = Sacar las {0} de autovender
- adventure.autosell.noSpare = Todas tus copias están en algún mazo
--settings.draftRanking = Enseñar un rating sobre cada carta del draft
-+settings.draftRanking = Enseñar un rating sobre cada carta del draft y al montar el mazo
- settings.autoSell = Vender solas las cartas repetidas
- settings.questTrophy = Una carta de trofeo del mazo del rival al ganar
- settings.autoSell.hint = Al terminar un duelo. Conserva una de cada arte, asi que no pierdes ninguna impresion, y lo vendido vuelve al mostrador.
-@@ -3166,6 +3167,12 @@ over.replay = Cerrar la repetición
+@@ -3298,6 +3298,14 @@ over.replay = Cerrar la repetición
  menu.replays = Repeticiones
  settings.replays = REPETICIONES
  settings.replays.on = Grabar mis partidas para volver a verlas
 +settings.clash = MESA 3D (NEO FORGE 3D)
-+settings.clash.on = Jugar las partidas 1 contra 1 en la mesa 3D
-+settings.clash.note = Solo para partidas de dos (también Commander 1 contra 1). Con más jugadores, dos en el mismo ordenador o Planechase se juega en la mesa normal. Vale desde la próxima partida.
++settings.clash.on = Mesa de juego
++settings.clash.2d = Mesa 2D
++settings.clash.3d = Mesa 3D
++settings.clash.note = Para partidas de dos (también Commander 1 contra 1, Quest y Aventura). Con más de dos jugadores, dos en el mismo ordenador o con Planechase, Archenemy o Vanguard se usa siempre la mesa 2D. Vale desde la próxima partida.
 +settings.clash.godot = Programa Godot
 +settings.clash.project = Carpeta del proyecto Neo Forge 3D (godot)
 +clash.playing = La partida se juega en la ventana de la mesa 3D.
@@ -1377,33 +613,18 @@ index 1912b66..86ebccd 100644
  settings.replays.assocRemove = Dejar de abrir los .frp con Neo Forge
  settings.replays.assocNote = Haz doble clic en una repetición (.frp) en Windows y se abre aquí, en Repeticiones. Si mueves la carpeta del juego, vuelve a pulsarlo.
 diff --git a/forge-gui-neo/src/main/resources/forge/neo/lang/neo-fr-FR.properties b/forge-gui-neo/src/main/resources/forge/neo/lang/neo-fr-FR.properties
-index a626705..473cf7b 100644
+index 888963f..3c46f63 100644
 --- a/forge-gui-neo/src/main/resources/forge/neo/lang/neo-fr-FR.properties
 +++ b/forge-gui-neo/src/main/resources/forge/neo/lang/neo-fr-FR.properties
-@@ -740,6 +740,7 @@ deck.oneHand.tip = Uniquement dans l'éditeur de decks : les onglets Catalogue/D
- deck.showAll = Toutes les cartes
- deck.showAll.tip = Avec « Toutes les cartes », tu peux ajouter des cartes que tu n'as pas encore : le deck s'enregistre, mais tu ne peux pas le jouer avant de les avoir.
- deck.missing = manque {0}
-+deck.draftRanking.tip = Note de draft (0–99) : plus elle est haute, plus la carte est forte en limité
- deck.import.missing = Tu n'as pas encore {0} de ces cartes. Le deck est enregistré, mais tu ne pourras le jouer qu'une fois que tu les auras.
- deck.removeMissing = Retirer celles que je n'ai pas
- deck.removeMissing.ask = Ceci retire {0} exemplaires de cartes que tu n'as pas :
-@@ -1562,7 +1563,7 @@ adventure.autosell.many = Mettre {0} en vente auto
- adventure.autosell.back = Retirer 1 de la vente auto
- adventure.autosell.backAll = Retirer les {0} de la vente auto
- adventure.autosell.noSpare = Tous tes exemplaires sont dans un deck
--settings.draftRanking = Afficher une note sur chaque carte du draft
-+settings.draftRanking = Afficher une note sur chaque carte du draft et pendant la construction du deck
- settings.autoSell = Vendre automatiquement les cartes en double
- settings.questTrophy = Une carte trophée du deck adverse quand tu gagnes
- settings.autoSell.hint = Après chaque duel. Garde un exemplaire de chaque illustration, donc tu ne perds aucune édition, et ce qui est vendu retourne au comptoir.
-@@ -2931,6 +2932,12 @@ over.replay = Fermer la rediffusion
+@@ -3063,6 +3063,14 @@ over.replay = Fermer la rediffusion
  menu.replays = Rediffusions
  settings.replays = REDIFFUSIONS
  settings.replays.on = Enregistrer mes parties pour les revoir
 +settings.clash = TABLE 3D (NEO FORGE 3D)
-+settings.clash.on = Jouer les parties en 1 contre 1 sur la table 3D
-+settings.clash.note = Uniquement pour les parties à deux (Commander en 1 contre 1 aussi). Avec plus de joueurs, à deux sur le même ordinateur ou avec Planechase, vous jouez sur la table normale. S’applique à partir de la prochaine partie.
++settings.clash.on = Table de jeu
++settings.clash.2d = Table 2D
++settings.clash.3d = Table 3D
++settings.clash.note = Pour les parties à deux (Commander en 1 contre 1, Quête et Aventure aussi). À plus de deux joueurs, à deux sur le même ordinateur ou avec Planechase, Archenemy ou Vanguard, la table 2D est toujours utilisée. S’applique à partir de la prochaine partie.
 +settings.clash.godot = Programme Godot
 +settings.clash.project = Dossier du projet Neo Forge 3D (godot)
 +clash.playing = La partie se déroule dans la fenêtre de la table 3D.
@@ -1411,33 +632,18 @@ index a626705..473cf7b 100644
  settings.replays.assocRemove = Ne plus ouvrir les .frp avec Neo Forge
  settings.replays.assocNote = Double-clique sur un replay (.frp) dans Windows et il s'ouvre ici, dans Replays. Si tu déplaces le dossier du jeu, appuie à nouveau.
 diff --git a/forge-gui-neo/src/main/resources/forge/neo/lang/neo-it-IT.properties b/forge-gui-neo/src/main/resources/forge/neo/lang/neo-it-IT.properties
-index 2c47462..dadd67e 100644
+index 32f8f2f..b80c2dd 100644
 --- a/forge-gui-neo/src/main/resources/forge/neo/lang/neo-it-IT.properties
 +++ b/forge-gui-neo/src/main/resources/forge/neo/lang/neo-it-IT.properties
-@@ -739,6 +739,7 @@ deck.oneHand.tip = Solo nell'editor di mazzi: le schede Catalogo/Mazzo, Carte/Co
- deck.showAll = Tutte le carte
- deck.showAll.tip = Con «Tutte le carte» puoi aggiungere carte che non hai ancora: il mazzo si salva, ma non puoi giocarlo finché non le ottieni.
- deck.missing = manca {0}
-+deck.draftRanking.tip = Valutazione draft (0–99): più è alta, più la carta è forte in limited
- deck.import.missing = {0} di queste carte non le hai ancora. Il mazzo viene salvato, ma non puoi giocarlo finché non le ottieni.
- deck.removeMissing = Togli quelle che non ho
- deck.removeMissing.ask = Verranno tolte {0} copie di carte che non hai:
-@@ -1561,7 +1562,7 @@ adventure.autosell.many = Metti {0} in vendita automatica
- adventure.autosell.back = Togli 1 dalla vendita automatica
- adventure.autosell.backAll = Togli tutte le {0} dalla vendita automatica
- adventure.autosell.noSpare = Tutte le tue copie sono in un mazzo
--settings.draftRanking = Mostra una valutazione su ogni carta del draft
-+settings.draftRanking = Mostra una valutazione su ogni carta del draft e nella costruzione del mazzo
- settings.autoSell = Vendi automaticamente le carte duplicate
- settings.questTrophy = Una carta trofeo dal mazzo avversario quando vinci
- settings.autoSell.hint = Dopo ogni duello. Conserva un esemplare di ogni arte, così non perdi nessuna edizione, e ciò che viene venduto torna al negozio.
-@@ -2930,6 +2931,12 @@ over.replay = Chiudi il replay
+@@ -3062,6 +3062,14 @@ over.replay = Chiudi il replay
  menu.replays = Replay
  settings.replays = REPLAY
  settings.replays.on = Registra le mie partite per rivederle
 +settings.clash = TAVOLO 3D (NEO FORGE 3D)
-+settings.clash.on = Gioca le partite 1 contro 1 sul tavolo 3D
-+settings.clash.note = Solo per partite a due (anche Commander 1 contro 1). Con più giocatori, in due sullo stesso computer o con Planechase si gioca sul tavolo normale. Vale dalla prossima partita.
++settings.clash.on = Tavolo di gioco
++settings.clash.2d = Tavolo 2D
++settings.clash.3d = Tavolo 3D
++settings.clash.note = Per le partite a due (anche Commander 1 contro 1, Quest e Avventura). Con più di due giocatori, in due sullo stesso computer o con Planechase, Archenemy o Vanguard si usa sempre il tavolo 2D. Vale dalla prossima partita.
 +settings.clash.godot = Programma Godot
 +settings.clash.project = Cartella del progetto Neo Forge 3D (godot)
 +clash.playing = La partita si svolge nella finestra del tavolo 3D.
@@ -1445,33 +651,18 @@ index 2c47462..dadd67e 100644
  settings.replays.assocRemove = Non aprire più i .frp con Neo Forge
  settings.replays.assocNote = Fai doppio clic su un replay (.frp) in Windows e si apre qui, in Replay. Se sposti la cartella del gioco, premilo di nuovo.
 diff --git a/forge-gui-neo/src/main/resources/forge/neo/lang/neo-ja-JP.properties b/forge-gui-neo/src/main/resources/forge/neo/lang/neo-ja-JP.properties
-index 1474524..a7150f3 100644
+index 67583da..0b1e449 100644
 --- a/forge-gui-neo/src/main/resources/forge/neo/lang/neo-ja-JP.properties
 +++ b/forge-gui-neo/src/main/resources/forge/neo/lang/neo-ja-JP.properties
-@@ -739,6 +739,7 @@ deck.oneHand.tip = デッキエディターのみ：カタログ/デッキ、カ
- deck.showAll = すべてのカード
- deck.showAll.tip = 「すべてのカード」なら、まだ持っていないカードも入れられる。デッキは保存できるが、手に入れるまでは使えない。
- deck.missing = 不足 {0}
-+deck.draftRanking.tip = ドラフト評価（0〜99）：高いほどリミテッドで強いカード
- 
- deck.import.missing = このうち{0}枚はまだ持っていません。デッキは保存されますが、そろうまで使えません。
- deck.removeMissing = 持っていないカードを外す
-@@ -1564,7 +1565,7 @@ adventure.autosell.many = {0}枚を自動売却へ
- adventure.autosell.back = 自動売却から1枚戻す
- adventure.autosell.backAll = 自動売却から{0}枚すべて戻す
- adventure.autosell.noSpare = 持っているカードはすべてデッキに入っています
--settings.draftRanking = ドラフトの各カードに評価を表示
-+settings.draftRanking = ドラフトとデッキ構築で各カードに評価を表示
- settings.autoSell = 重複カードを自動で売却
- settings.questTrophy = 勝利時に対戦相手のデッキからトロフィーカードを得る
- settings.autoSell.hint = 各デュエルの後に。アートごとに1枚は残すから、どのプリントも失わないし、売ったものはショップに戻るよ。
-@@ -2933,6 +2934,12 @@ over.replay = リプレイを閉じる
+@@ -3065,6 +3065,14 @@ over.replay = リプレイを閉じる
  menu.replays = リプレイ
  settings.replays = リプレイ
  settings.replays.on = 対戦を記録してあとで見直す
 +settings.clash = 3Dテーブル（NEO FORGE 3D）
-+settings.clash.on = 1対1の対戦を3Dテーブルで遊ぶ
-+settings.clash.note = 2人対戦のみ（統率者戦の1対1も含む）。3人以上、同じPCでの2人対戦、プレインチェイスでは通常のテーブルで遊びます。次の対戦から反映されます。
++settings.clash.on = プレイテーブル
++settings.clash.2d = 2Dテーブル
++settings.clash.3d = 3Dテーブル
++settings.clash.note = 2人対戦に適用されます（統率者戦1対1、クエスト、アドベンチャーも含む）。3人以上、同じPCでの2人対戦、プレインチェイス・アーチエネミー・ヴァンガードでは常に2Dテーブルを使います。次の対戦から反映されます。
 +settings.clash.godot = Godotプログラム
 +settings.clash.project = Neo Forge 3Dのプロジェクトフォルダ（godot）
 +clash.playing = 対戦は3Dテーブルのウィンドウで行われています。
@@ -1479,33 +670,18 @@ index 1474524..a7150f3 100644
  settings.replays.assocRemove = .frpファイルをNeo Forgeで開かない
  settings.replays.assocNote = Windowsでリプレイ(.frp)をダブルクリックすると、ここ（リプレイ）で開きます。ゲームのフォルダを移動したら、もう一度押してください。
 diff --git a/forge-gui-neo/src/main/resources/forge/neo/lang/neo-ko-KR.properties b/forge-gui-neo/src/main/resources/forge/neo/lang/neo-ko-KR.properties
-index 75cf27e..e4597be 100644
+index 4cf0caf..bcc899e 100644
 --- a/forge-gui-neo/src/main/resources/forge/neo/lang/neo-ko-KR.properties
 +++ b/forge-gui-neo/src/main/resources/forge/neo/lang/neo-ko-KR.properties
-@@ -745,6 +745,7 @@ deck.oneHand.tip = 덱 편집기에서만: 카탈로그/덱, 카드/사령관, 
- deck.showAll = 모든 카드
- deck.showAll.tip = "모든 카드"에서는 아직 없는 카드도 넣을 수 있어요. 덱은 저장되지만, 카드를 얻기 전까지는 플레이할 수 없어요.
- deck.missing = 부족 {0}
-+deck.draftRanking.tip = 드래프트 등급(0–99): 높을수록 리미티드에서 강한 카드
- 
- deck.import.missing = 이 중 {0}장은 아직 없어요. 덱은 저장되지만, 모으기 전까지는 플레이할 수 없어요.
- deck.removeMissing = 없는 카드 빼기
-@@ -1570,7 +1571,7 @@ adventure.autosell.many = {0}장을 자동 판매로
- adventure.autosell.back = 자동 판매에서 1장 되돌리기
- adventure.autosell.backAll = 자동 판매에서 {0}장 모두 되돌리기
- adventure.autosell.noSpare = 가진 카드가 모두 덱에 들어 있습니다
--settings.draftRanking = 드래프트의 각 카드에 등급 표시
-+settings.draftRanking = 드래프트와 덱 구성에서 각 카드에 등급 표시
- settings.autoSell = 중복 카드 자동 판매
- settings.questTrophy = 승리하면 상대 덱에서 트로피 카드 획득
- settings.autoSell.hint = 듀얼이 끝날 때마다요. 아트별로 한 장씩은 남겨서 어떤 인쇄판도 잃지 않고, 판 카드는 다시 상점으로 돌아가요.
-@@ -2939,6 +2940,12 @@ over.replay = 리플레이 닫기
+@@ -3071,6 +3071,14 @@ over.replay = 리플레이 닫기
  menu.replays = 리플레이
  settings.replays = 리플레이
  settings.replays.on = 다시 볼 수 있도록 내 게임 녹화
 +settings.clash = 3D 테이블 (NEO FORGE 3D)
-+settings.clash.on = 1대1 게임을 3D 테이블에서 플레이
-+settings.clash.note = 2인 게임에만 적용됩니다(커맨더 1대1 포함). 플레이어가 더 많거나, 한 컴퓨터에서 2인이 하거나, 플레인체이스일 때는 일반 테이블에서 플레이합니다. 다음 게임부터 적용됩니다.
++settings.clash.on = 게임 테이블
++settings.clash.2d = 2D 테이블
++settings.clash.3d = 3D 테이블
++settings.clash.note = 2인 게임에 적용됩니다(커맨더 1대1, 퀘스트, 어드벤처 포함). 플레이어가 셋 이상이거나, 한 컴퓨터에서 2인이 하거나, 플레인체이스·아크에너미·뱅가드일 때는 항상 2D 테이블을 사용합니다. 다음 게임부터 적용됩니다.
 +settings.clash.godot = Godot 프로그램
 +settings.clash.project = Neo Forge 3D 프로젝트 폴더 (godot)
 +clash.playing = 게임이 3D 테이블 창에서 진행 중입니다.
@@ -1513,33 +689,18 @@ index 75cf27e..e4597be 100644
  settings.replays.assocRemove = .frp 파일을 Neo Forge로 열지 않기
  settings.replays.assocNote = Windows에서 리플레이(.frp)를 더블 클릭하면 여기 리플레이에서 열립니다. 게임 폴더를 옮기면 다시 눌러 주세요.
 diff --git a/forge-gui-neo/src/main/resources/forge/neo/lang/neo-pt-BR.properties b/forge-gui-neo/src/main/resources/forge/neo/lang/neo-pt-BR.properties
-index 0f0689a..005f115 100644
+index 84e5df7..c7c3e72 100644
 --- a/forge-gui-neo/src/main/resources/forge/neo/lang/neo-pt-BR.properties
 +++ b/forge-gui-neo/src/main/resources/forge/neo/lang/neo-pt-BR.properties
-@@ -739,6 +739,7 @@ deck.oneHand.tip = Só no editor de baralhos: as abas Catálogo/Baralho, Cartas/
- deck.showAll = Todas as cartas
- deck.showAll.tip = Com "Todas as cartas" você pode colocar cartas que ainda não tem: o deck é salvo, mas não dá para jogá-lo até conseguir as cartas.
- deck.missing = falta {0}
-+deck.draftRanking.tip = Nota de draft (0–99): quanto maior, mais forte no limitado
- deck.import.missing = Você ainda não tem {0} destas cartas. O deck é salvo, mas só pode ser jogado quando você as conseguir.
- deck.removeMissing = Tirar as que não tenho
- deck.removeMissing.ask = Isto tira {0} cópias de cartas que você não tem:
-@@ -1562,7 +1563,7 @@ adventure.autosell.many = Mover {0} para venda automática
- adventure.autosell.back = Tirar 1 da venda automática
- adventure.autosell.backAll = Tirar todas as {0} da venda automática
- adventure.autosell.noSpare = Todas as suas cópias estão em algum deck
--settings.draftRanking = Mostrar uma nota em cada carta do draft
-+settings.draftRanking = Mostrar uma nota em cada carta do draft e na montagem do deck
- settings.autoSell = Vender cartas duplicadas automaticamente
- settings.questTrophy = Uma carta de troféu do deck do oponente ao vencer
- settings.autoSell.hint = Depois de cada duelo. Mantém uma de cada arte, então nenhuma edição se perde, e o que é vendido volta para a loja.
-@@ -2931,6 +2932,12 @@ over.replay = Fechar o replay
+@@ -3063,6 +3063,14 @@ over.replay = Fechar o replay
  menu.replays = Replays
  settings.replays = REPLAYS
  settings.replays.on = Gravar minhas partidas para revê-las
 +settings.clash = MESA 3D (NEO FORGE 3D)
-+settings.clash.on = Jogar as partidas 1 contra 1 na mesa 3D
-+settings.clash.note = Só para partidas a dois (Commander 1 contra 1 também). Com mais jogadores, dois no mesmo computador ou Planechase, você joga na mesa normal. Vale a partir da próxima partida.
++settings.clash.on = Mesa de jogo
++settings.clash.2d = Mesa 2D
++settings.clash.3d = Mesa 3D
++settings.clash.note = Para partidas a dois (Commander 1 contra 1, Quest e Aventura também). Com mais de dois jogadores, dois no mesmo computador ou com Planechase, Archenemy ou Vanguard, a mesa 2D é sempre usada. Vale a partir da próxima partida.
 +settings.clash.godot = Programa Godot
 +settings.clash.project = Pasta do projeto Neo Forge 3D (godot)
 +clash.playing = A partida está rodando na janela da mesa 3D.
@@ -1547,33 +708,18 @@ index 0f0689a..005f115 100644
  settings.replays.assocRemove = Parar de abrir .frp com o Neo Forge
  settings.replays.assocNote = Clique duas vezes num replay (.frp) no Windows e ele abre aqui, em Replays. Se mover a pasta do jogo, aperte de novo.
 diff --git a/forge-gui-neo/src/main/resources/forge/neo/lang/neo-ru-RU.properties b/forge-gui-neo/src/main/resources/forge/neo/lang/neo-ru-RU.properties
-index e2dbc4a..b969d93 100644
+index d64779f..51bf782 100644
 --- a/forge-gui-neo/src/main/resources/forge/neo/lang/neo-ru-RU.properties
 +++ b/forge-gui-neo/src/main/resources/forge/neo/lang/neo-ru-RU.properties
-@@ -739,6 +739,7 @@ deck.oneHand.tip = Только в редакторе колод: вкладки
- deck.showAll = Все карты
- deck.showAll.tip = С «Все карты» можно добавлять карты, которых у тебя ещё нет: колода сохранится, но играть ей нельзя, пока не получишь их.
- deck.missing = нет {0}
-+deck.draftRanking.tip = Рейтинг драфта (0–99): чем выше, тем сильнее карта в лимитед
- deck.import.missing = {0} из этих карт у тебя пока нет. Колода сохранится, но играть ею можно будет, только когда они у тебя появятся.
- deck.removeMissing = Убрать те, которых нет
- deck.removeMissing.ask = Будут убраны {0} копий карт, которых у тебя нет:
-@@ -1561,7 +1562,7 @@ adventure.autosell.many = {0} в автопродажу
- adventure.autosell.back = Вернуть 1 из автопродажи
- adventure.autosell.backAll = Вернуть все {0} из автопродажи
- adventure.autosell.noSpare = Все твои копии уже в колодах
--settings.draftRanking = Показывать рейтинг на каждой карте драфта
-+settings.draftRanking = Показывать рейтинг на каждой карте драфта и при сборке колоды
- settings.autoSell = Продавать дубликаты автоматически
- settings.questTrophy = Карта-трофей из колоды соперника при победе
- settings.autoSell.hint = После каждой дуэли. Одна копия каждого арта сохраняется, так что ни одно издание не теряется, а проданное возвращается в магазин.
-@@ -2930,6 +2931,12 @@ over.replay = Закрыть повтор
+@@ -3062,6 +3062,14 @@ over.replay = Закрыть повтор
  menu.replays = Повторы
  settings.replays = ПОВТОРЫ
  settings.replays.on = Записывать мои партии, чтобы пересматривать их
 +settings.clash = 3D-СТОЛ (NEO FORGE 3D)
-+settings.clash.on = Играть партии 1 на 1 за 3D-столом
-+settings.clash.note = Только для партий вдвоём (и Commander 1 на 1). С большим числом игроков, вдвоём за одним компьютером или с Planechase игра идёт за обычным столом. Действует со следующей партии.
++settings.clash.on = Игровой стол
++settings.clash.2d = 2D-стол
++settings.clash.3d = 3D-стол
++settings.clash.note = Для партий вдвоём (и Commander 1 на 1, Quest и Adventure). При более чем двух игроках, вдвоём за одним компьютером или с Planechase, Archenemy или Vanguard всегда используется 2D-стол. Действует со следующей партии.
 +settings.clash.godot = Программа Godot
 +settings.clash.project = Папка проекта Neo Forge 3D (godot)
 +clash.playing = Партия идёт в окне 3D-стола.
@@ -1581,73 +727,21 @@ index e2dbc4a..b969d93 100644
  settings.replays.assocRemove = Больше не открывать .frp в Neo Forge
  settings.replays.assocNote = Дважды щёлкните по записи (.frp) в Windows, и она откроется здесь, в «Записях». Если переместите папку игры, нажмите снова.
 diff --git a/forge-gui-neo/src/main/resources/forge/neo/lang/neo-zh-CN.properties b/forge-gui-neo/src/main/resources/forge/neo/lang/neo-zh-CN.properties
-index 0fa14a3..654a156 100644
+index c0995e9..633d771 100644
 --- a/forge-gui-neo/src/main/resources/forge/neo/lang/neo-zh-CN.properties
 +++ b/forge-gui-neo/src/main/resources/forge/neo/lang/neo-zh-CN.properties
-@@ -739,6 +739,7 @@ deck.oneHand.tip = 仅限卡组编辑器：目录/卡组、卡牌/指挥官、
- deck.showAll = 所有卡牌
- deck.showAll.tip = 选"所有卡牌"可以放入还没有的牌：套牌能保存，但拿到这些牌之前不能使用。
- deck.missing = 缺 {0}
-+deck.draftRanking.tip = 轮抓评分（0–99）：越高，在限制赛中越强
- 
- deck.import.missing = 其中 {0} 张牌你还没有。牌组会保存，但要等你拿到它们才能使用。
- deck.removeMissing = 移除我没有的牌
-@@ -1564,7 +1565,7 @@ adventure.autosell.many = 将 {0} 张设为自动出售
- adventure.autosell.back = 从自动出售中取回 1 张
- adventure.autosell.backAll = 从自动出售中取回全部 {0} 张
- adventure.autosell.noSpare = 你的所有副本都在牌组中
--settings.draftRanking = 在轮抓的每张卡上显示评分
-+settings.draftRanking = 在轮抓和组牌时在每张卡上显示评分
- settings.autoSell = 自动卖掉重复的卡
- settings.questTrophy = 获胜时从对手套牌中获得一张战利品牌
- settings.autoSell.hint = 每打完一场对决就卖。每种画面都会留一张，不会丢掉任何一个版本，卖掉的会重新出现在商店里。
-@@ -2933,6 +2934,12 @@ over.replay = 关闭回放
+@@ -3065,6 +3065,14 @@ over.replay = 关闭回放
  menu.replays = 回放
  settings.replays = 回放
  settings.replays.on = 录制我的对局以便回看
 +settings.clash = 3D 牌桌（NEO FORGE 3D）
-+settings.clash.on = 在 3D 牌桌上进行 1 对 1 对局
-+settings.clash.note = 仅限双人对局（包括指挥官 1 对 1）。玩家更多、同一台电脑双人对局或使用时空竞逐时，在普通牌桌上进行。从下一局开始生效。
++settings.clash.on = 牌桌
++settings.clash.2d = 2D 牌桌
++settings.clash.3d = 3D 牌桌
++settings.clash.note = 适用于双人对局（包括指挥官 1 对 1、任务和冒险）。超过两名玩家、同一台电脑双人对局，或使用时空竞逐、魔王对决、先锋时，始终使用 2D 牌桌。从下一局开始生效。
 +settings.clash.godot = Godot 程序
 +settings.clash.project = Neo Forge 3D 项目文件夹（godot）
 +clash.playing = 对局正在 3D 牌桌窗口中进行。
  settings.replays.assoc = 用 Neo Forge 打开 .frp 文件
  settings.replays.assocRemove = 不再用 Neo Forge 打开 .frp 文件
  settings.replays.assocNote = 在 Windows 中双击回放（.frp），就会在这里的“回放”中打开。如果移动了游戏文件夹，请再按一次。
-diff --git a/forge-gui-neo/src/main/resources/forge/neo/neo.css b/forge-gui-neo/src/main/resources/forge/neo/neo.css
-index a7e9f17..05d3c75 100644
---- a/forge-gui-neo/src/main/resources/forge/neo/neo.css
-+++ b/forge-gui-neo/src/main/resources/forge/neo/neo.css
-@@ -496,6 +496,32 @@
-     -fx-padding: 0.05em 0.55em 0.1em 0.55em;
- }
- 
-+/* Neo Forge 3D: die Draft-Bewertung in einer Zeile von Deck oder Bank, im
-+   Look der Pastille auf der Karte (.card-draft-rank): dunkel, gruen ab 66,
-+   gedaempft unter 33. Feste Breite, damit die Namen untereinander bleiben. */
-+.deck-row-rank {
-+    -fx-font-size: 0.8em;
-+    -fx-font-weight: bold;
-+    -fx-text-fill: -neo-text;
-+    -fx-background-color: rgba(8,11,16,0.95);
-+    -fx-background-radius: 4;
-+    -fx-border-color: rgba(255,255,255,0.28);
-+    -fx-border-radius: 4;
-+    -fx-border-width: 1;
-+    -fx-padding: 0 0.3em 0 0.3em;
-+    -fx-min-width: 2.1em;
-+    -fx-alignment: center;
-+}
-+.deck-row-rank:rank-good {
-+    -fx-text-fill: #0B0E13;
-+    -fx-background-color: -neo-valid;
-+    -fx-border-color: rgba(0,0,0,0.35);
-+}
-+.deck-row-rank:rank-poor {
-+    -fx-text-fill: -neo-text-dim;
-+    -fx-border-color: rgba(255,255,255,0.12);
-+}
-+
- /* Las copias de mas de una suelta de la tienda: "x5" abajo a la derecha (Discord, 15-10-2026). */
- .shop-count {
-     -fx-font-size: 0.95em;

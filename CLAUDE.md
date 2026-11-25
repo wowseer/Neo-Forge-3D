@@ -166,9 +166,12 @@ Deckauswahl und Formate übernimmt NeoForge.
   (Partie-Start `forge/neo/match/NeoGame.java`, Tisch `NeoMatchUI.java`). Gebaut wird es als Modul
   im Forge-Checkout `~/OProgrammieren/Java/forge` (Forge auf NeoForges `FORGE_REF`, Modul im
   `pom.xml`, NeoForges `BUILDING.md`) mit Maven aus `~/.local/opt/apache-maven-*` und dem System-JDK
-  (27 geht): `tools/neoforge_build.sh`, starten mit `tools/neoforge_play.sh`. Eine installierte
-  itch.io-Version (`~/Games/NeoForge/lib/app/`) ist nur für `tools/neoforge_patch.sh` /
-  `neoforge_clash.sh` nötig und gerade nicht vorhanden. Der Integrationscode liegt im NeoForge-Repo
+  (27 geht): `tools/neoforge_build.sh`, starten mit `tools/neoforge_play.sh`. `~/Games/NeoForge/` ist eine
+  selbst gebaute Version **1.0.66 mit 3D-Tisch** (NeoForges `linux/empaquetar.sh` mit
+  `FORGE_REF` aus `.github/workflows/linux.yml`, Tisch-Export in `lib/app/clash3d/`; Sicherung der
+  alten itch.io-Version 1.0.43 in `~/Games/NeoForge-1.0.43-backup/`). Der Patch
+  (`neoforge-host.patch`) gilt gegen `v1.0.66`. NeoForges Forge ist neuer als 2.0.15:
+  `tools/sync_neoforge.sh` passt dafür `chooseCardsToDiscardFrom` (DelayedReveal) an. Der Integrationscode liegt im NeoForge-Repo
   auf dem lokalen Branch `neo-forge-3d` (`main` bleibt wie upstream); dort nur lokal committen,
   **nie pushen** (Remote gehört AdrianLopez98).
 - forge-rules-rs (Rust-Neuschreibung der Regeln, nicht NeoForge): `~/Entwicklung/Java/forge/rust/`

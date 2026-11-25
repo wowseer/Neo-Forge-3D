@@ -5,9 +5,11 @@ matches on the 3D table of Neo Forge 3D. Menus, decks and modes stay with NeoFor
 seat NeoForge starts Godot as the game table and drives it through the Forge bridge (protocol v3,
 local socket). A switch in NeoForge's settings turns the 3D table on and off.
 
-The 3D table is only used for **two-player matches** (you against one opponent, Commander 1 vs 1
-too). Matches with more players, two people on one computer (hot seat), Planechase, Archenemy and
-Vanguard keep using NeoForge's own table.
+The 3D table is used for **every two-player match** in every mode (you against one opponent:
+Constructed, Commander 1 vs 1, Draft, Sealed, Tournament, Quest, Ascent, Rogue and Adventure duels). Matches with more players, two people on one computer (hot seat), Planechase, Archenemy and
+Vanguard always use NeoForge's 2D table. Tutorial lessons and puzzles also stay on the 2D table
+(the lesson guide lives in NeoForge's table; puzzles need a human-marked controller, which the
+remote seat is not).
 
 Everything here is kept separate from the bridge itself, so it can be handed to any NeoForge
 repository.
@@ -17,7 +19,7 @@ repository.
 | File | What |
 |---|---|
 | `src/forge/neo/clash/ClashTable.java` | Wrapper for NeoForge: reads the settings (system property → NeoForge setting → environment variable), decides whether a match runs on the 3D table (`useFor`: switched on, 1 vs 1, no hot seat, no unsupported variant), starts the table via `clash.forgebridge.TableLauncher`, provides the remote-controlled player (`ClashBridge.remotePlayer`) |
-| `neoforge-host.patch` | Changes to NeoForge's own classes against NeoForge upstream: `SettingsPanel` hides the Godot paths when a table is bundled, `NeoGame` (3D table for the human seat of a 1 vs 1 match, `NeoMatchUI` runs invisibly as a spectator, NeoForge's window says the match runs in the 3D table window), `adventure/NeoDuelBridge` (the same for Adventure duels: they are set up by Forge's Adventure and start there instead of in `NeoGame`; the human, last in the Adventure's seat list, moves to seat 0 – `ClashTable.openForDuel`), `SafeAi` (do not replace the remote seat with the AI fallback), `NeoMain` (test command `clash`), `SettingsPanel` (section "3D table (Neo Forge 3D)" at the top of the *Table* tab), draft ratings (`draft/DraftRating`, `ui/DraftScreen`, `card/CardNode`, `ui/DeckBuilderScreen`, `deck/DeckContext` with `DraftDeckContext`/`NetPoolContext`, `NeoApp`: switching the rating on mid-draft puts the numbers on the right cards, the rating also shows on cards without art, unranked cards get no number instead of 0, and deck building from a draft or sealed pool shows the rating on pool cards, deck tiles and deck/sideboard rows), faster card images (`card/ScryfallCdn`, `platform/NeoImageFetcher`: one Scryfall search per edition gives the CDN id of every printing in English and the game's card language, kept in `cache/neo-cdn/`; images then come from `cards.scryfall.io` in parallel instead of one rate-limited API request each, the API stays the fallback; a known missing translation skips its request; a network error no longer marks a translation as missing), language files, `neo.css` |
+| `neoforge-host.patch` | Changes to NeoForge's own classes against NeoForge upstream: `SettingsPanel` hides the Godot paths when a table is bundled, `NeoGame` (3D table for the human seat of a 1 vs 1 match, `NeoMatchUI` runs invisibly as a spectator, NeoForge's window says the match runs in the 3D table window), `adventure/NeoDuelBridge` (the same for Adventure duels: they are set up by Forge's Adventure and start there instead of in `NeoGame`; the human, last in the Adventure's seat list, moves to seat 0 – `ClashTable.openForDuel`), `SafeAi` (do not replace the remote seat with the AI fallback), `NeoMain` (test command `clash`), `SettingsPanel` (section "3D table (Neo Forge 3D)" at the top of the *Table* tab), `adventure/NeoWindow` (window handoff for Adventure duels), `quest/NeoQuestMatch` + `quest/QuestLowLife` (Quest duels: Forge's `QuestUtil` builds the seats, a `HostedMatch` subclass moves the player to seat 0 at the 3D table, keeps the low-life option, and gives the seat back to Forge's quest player before the rewards are computed – Forge finds the winner through that `LobbyPlayer`), language files. Made against NeoForge 1.0.66 (`v1.0.66`) |
 
 The bridge itself (`clash.forgebridge` from `forge-bridge/src/`, without the program entry point
 `app/`) is copied in by `tools/sync_neoforge.sh`.
@@ -70,8 +72,9 @@ path (see `tools/neoforge_clash.sh`).
 
 ## Enabling
 
-In NeoForge under *Settings → Table → 3D table (Neo Forge 3D)*: "Play 1 vs 1 games on the 3D
-table" = yes. Without a bundled table the section also shows "Godot program" (Godot 4.7) and
+Choose the table in *Settings → Table → 3D table (Neo Forge 3D)*: "Game table" = **2D table** or
+**3D table**. The default is the 3D table. With more than two players the 2D table is always used,
+whatever is chosen there. Without a bundled table the section also shows "Godot program" (Godot 4.7) and
 "Neo Forge 3D project folder" (`godot/` of Neo Forge 3D) for when the start script does not provide
 them. Applies from the next match.
 
@@ -79,7 +82,7 @@ Each value is taken from the first source that has it:
 
 | System property (this start only) | NeoForge setting | Environment variable (default) | Meaning |
 |---|---|---|---|
-| `neo.clash=true` | `clash3d` | `NEOFORGE_CLASH=true` | use the 3D table |
+| `neo.clash=false` | `clash3d` | `NEOFORGE_CLASH=false` | use the 3D table (default: yes) |
 | `neo.clash.table` | `clash3d.table` | `CLASH_TABLE` | exported table to start (otherwise the bundled one in `clash3d/`) |
 | `neo.clash.godot` | `clash3d.godot` | `CLASH_GODOT` | Godot executable (otherwise `godot`) |
 | `neo.clash.project` | `clash3d.project` | `CLASH_PROJECT` | Godot project folder of Neo Forge 3D (only without an exported table) |

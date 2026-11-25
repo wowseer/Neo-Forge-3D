@@ -421,10 +421,12 @@ the exported game table (`tools/export_table.sh` → `export/linux/`, copied to
 `tools/neoforge_menu.sh` puts it into the application menu. Details:
 `integrations/neoforge/README.md`.
 
-**Enabling:** in NeoForge under *Settings → Table → 3D table (Neo Forge 3D)*: "Play 1 vs 1 games
-on the 3D table" = yes; "Godot program" (path to the Godot 4.7 binary) and "Neo Forge 3D project
+**Choosing the table:** in NeoForge under *Settings → Table → 3D table (Neo Forge 3D)*: "Game
+table" = 2D table or 3D table (default: 3D). It applies to every 1 vs 1 match in every mode
+(Constructed, Commander, Draft, Tournament, Quest, Ascent, Rogue, Adventure); with more than two
+players the 2D table is always used. Tutorial lessons and puzzles stay on the 2D table. There also: "Godot program" (path to the Godot 4.7 binary) and "Neo Forge 3D project
 folder" (the `godot/` folder of this project) if the start script does not set them. Order: system
-property (`-Dneo.clash=true -Dneo.clash.godot=… -Dneo.clash.project=…`, this start only) →
+property (`-Dneo.clash=false -Dneo.clash.godot=… -Dneo.clash.project=…`, this start only) →
 NeoForge setting → environment variable (`NEOFORGE_CLASH`, `CLASH_GODOT`, `CLASH_PROJECT`). If
 Godot does not start within 2 minutes, NeoForge plays with its own table as usual. While the match
 runs, NeoForge's window says "The game is running in the 3D table window."
