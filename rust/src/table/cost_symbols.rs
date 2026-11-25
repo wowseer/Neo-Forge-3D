@@ -70,6 +70,11 @@ impl IControl for CostSymbolCanvas {
             draw_seat_token(&mut b, kind, count.parse().unwrap_or(0), size);
             return;
         }
+        // Kapitelmarke einer Saga („&chapter:II“, [`chapter_icon`])
+        if let Some(numeral) = token.strip_prefix("&chapter:") {
+            draw_chapter(&mut b, numeral, size);
+            return;
+        }
         // Schlüsselwort-Symbol unten an der Kreaturen-Kachel („&flying“ …, [`keyword_icon`])
         if let Some(kind) = token.strip_prefix('&') {
             draw_keyword(&mut b, kind, size);
@@ -321,6 +326,52 @@ fn draw_keyword(b: &mut godot::classes::CanvasItem, kind: &str, size: f32) {
 /// Phasing-Symbol (ausgephaste Karte) als `Sprite3D` (Durchmesser `size`).
 pub fn phasing_icon(size: f32) -> Gd<Sprite3D> {
     symbol_sprite("&phasing", size)
+}
+
+/// Kapitelmarke einer Saga (Kapitel `chapter`, römische Ziffer) als `Sprite3D` (Höhe `size`).
+pub fn chapter_icon(chapter: u32, size: f32) -> Gd<Sprite3D> {
+    let mut s = symbol_sprite(&format!("&chapter:{}", roman(chapter)), size);
+    // über Kartenbild und Textfeld der Stack-Karte
+    s.set_render_priority(4);
+    s
+}
+
+/// Römische Zahl 1 … 20 (Kapitel einer Saga).
+fn roman(n: u32) -> String {
+    const ONES: [&str; 10] = ["", "I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX"];
+    let n = n.min(39) as usize;
+    format!("{}{}", "X".repeat(n / 10), ONES[n % 10])
+}
+
+/// Kapitelmarke wie auf gedruckten Sagas: liegendes Sechseck (Spitzen links und rechts), dunkel
+/// gefüllt mit hellem Rand, darin die römische Ziffer in Weiß.
+fn draw_chapter(b: &mut godot::classes::CanvasItem, numeral: &str, size: f32) {
+    let c = Vector2::splat(size * 0.5);
+    let hex = |w: f32, h: f32, dy: f32| -> PackedVector2Array {
+        [(-w, 0.0), (-w * 0.55, -h), (w * 0.55, -h), (w, 0.0), (w * 0.55, h), (-w * 0.55, h)]
+            .iter()
+            .map(|&(x, y)| c + Vector2::new(x, y + dy))
+            .collect()
+    };
+    let (w, h) = (size * 0.47, size * 0.36);
+    b.draw_colored_polygon(&hex(w + size * 0.02, h + size * 0.02, size * 0.03), Color::from_rgba(0.0, 0.0, 0.0, 0.55));
+    b.draw_colored_polygon(&hex(w, h, 0.0), Color::from_rgb(0.9, 0.86, 0.76));
+    b.draw_colored_polygon(&hex(w - size * 0.05, h - size * 0.05, 0.0), Color::from_rgb(0.1, 0.09, 0.1));
+    let Some(font) = ThemeDb::singleton().get_fallback_font() else { return };
+    let fs = (size * match numeral.chars().count() {
+        0..=1 => 0.52,
+        2 => 0.46,
+        3 => 0.36,
+        _ => 0.28,
+    }) as i32;
+    let ascent = font.get_ascent_ex().font_size(fs).done();
+    let descent = font.get_descent_ex().font_size(fs).done();
+    b.draw_string_ex(&font, Vector2::new(0.0, c.y + (ascent - descent) * 0.5), numeral)
+        .alignment(HorizontalAlignment::CENTER)
+        .width(size)
+        .font_size(fs)
+        .modulate(Color::from_rgb(0.98, 0.96, 0.92))
+        .done();
 }
 
 /// Schlüsselwort-Symbol als `Sprite3D` (Durchmesser `size`, Fläche in der XY-Ebene, Vorderseite +Z).

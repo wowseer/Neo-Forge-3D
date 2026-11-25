@@ -652,6 +652,19 @@ impl Showcase {
         zone.bind_mut().layout();
     }
 
+    /// Karten der Bühne beim Hovern groß und gerade vor die Kamera holen (Anteil `height` der
+    /// Bildschirmhöhe), damit ihr Text lesbar ist – z. B. bei der Reihenfolge von Triggern; nach
+    /// [method add_owned_cards] aufrufen.
+    #[func]
+    pub fn enable_hover_zoom(&mut self, height: f32) {
+        let Some(mut zone) = self.zone.clone() else { return };
+        zone.set("zoom_cards", &true.to_variant());
+        for mut card in zone.bind().get_cards().iter_shared() {
+            card.set("zoom_screen_height", &height.to_variant());
+        }
+        zone.bind_mut().layout();
+    }
+
     /// Fächer als Cover-Flow zum Durchsuchen vieler Karten (Bibliothek, Friedhof …), nach
     /// [method show_options] bzw. [method add_owned_cards] aufrufen: Karten in Größe `scale`
     /// im Abstand `step` überlappend nebeneinander, die mittlere vorn und gerade, die übrigen zur

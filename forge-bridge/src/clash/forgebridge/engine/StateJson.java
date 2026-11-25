@@ -3,7 +3,6 @@ package clash.forgebridge.engine;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 
-import forge.card.MagicColor;
 import forge.game.Game;
 import forge.game.GameEntity;
 import forge.game.card.Card;
@@ -51,9 +50,11 @@ final class StateJson {
                 po.add("library_known", known);
             }
             po.addProperty("hand_count", p.getCardsIn(ZoneType.Hand).size());
-            // Manapool: Menge je Farbe in der Reihenfolge W U B R G C
+            // Manapool: Menge je Farbe in der Reihenfolge W U B R G C. Forges Pool führt Mana
+            // unter ManaAtom-Codes: farblos ist dort 1 << 5, nicht MagicColor.COLORLESS (0) –
+            // mit WUBRGC wurde farbloses Mana (Sol Ring, Metalworker, Workshop …) nie gezählt
             JsonArray pool = new JsonArray();
-            for (byte color : MagicColor.WUBRGC) {
+            for (byte color : forge.card.mana.ManaAtom.MANATYPES) {
                 pool.add(p.getManaPool().getAmountOfColor(color));
             }
             po.add("mana_pool", pool);

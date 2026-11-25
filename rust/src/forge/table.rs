@@ -3342,6 +3342,8 @@ impl ForgeTable {
             showcase.bind_mut().add_owned_cards(zone, copies);
         }
         showcase.bind_mut().enable_scroll();
+        // Text der Fähigkeiten lesbar: die Karte unter der Maus kommt groß nach vorn
+        showcase.bind_mut().enable_hover_zoom(ORDER_ZOOM_HEIGHT);
         let me = self.to_gd();
         let mut reset = Button3D::create(ButtonStyle::Blue, tr!("Zurücksetzen", "Reset"), Showcase::button_width());
         reset.connect("pressed", &Callable::from_object_method(&me, "on_order_reset"));
@@ -5241,7 +5243,8 @@ impl ForgeTable {
                 }
             }
             let body = body.split(" [Added once").next().unwrap_or(body).trim();
-            d.set("text", format!("{} — {body}", roman(chapter)).as_str());
+            // die Kapitelnummer zeigt die Marke auf dem Kartenbild (`CardDef::chapter`)
+            d.set("text", body);
             d.set("chapter", chapter);
         } else {
             d.set("text", text.as_str());
@@ -5648,11 +5651,6 @@ fn phase_index(phase: &str) -> i64 {
 /// „Spielstein“ (nur in der Kartenansicht – auf dem Tisch zeigt die Kachel das Bild frei).
 fn card_badges(data: &VarDictionary, ring_bearers: &[i64], token: bool) -> String {
     let mut lines: Vec<String> = Vec::new();
-    // Kapitel-Fähigkeit einer Saga auf dem Stack
-    let chapter = get_int(data, "chapter");
-    if chapter > 0 {
-        lines.push(trf!("Kapitel {}", "Chapter {}", roman(chapter)));
-    }
     if get_bool(data, "commander") {
         lines.push(tr!("Commander", "Commander").to_string());
     }
@@ -5701,12 +5699,6 @@ fn option_letter(o: &crate::rules::OptionText) -> Option<char> {
 }
 
 /// Plakette einer Handkarten-Kopie: aus welcher Zone sie gespielt wird.
-/// Römische Zahl (Kapitel einer Saga, 1 … 20).
-fn roman(n: i64) -> String {
-    const R: [&str; 20] = ["I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X", "XI", "XII", "XIII", "XIV", "XV", "XVI", "XVII", "XVIII", "XIX", "XX"];
-    usize::try_from(n - 1).ok().and_then(|i| R.get(i)).map_or_else(|| n.to_string(), |s| s.to_string())
-}
-
 fn zone_label(zone: &str) -> String {
     match zone {
         "Graveyard" => tr!("aus dem Friedhof", "from graveyard").to_string(),
@@ -6074,6 +6066,8 @@ const SCRY_SPLIT_X: f32 = -0.2;
 const SCRY_STEP: f32 = 0.42;
 /// Kartenwahl-Bühne (Cover-Flow): Kartenabstand (überlappend), Kartengröße, Lage von „Ablehnen“.
 const LIB_STEP: f32 = 0.3;
+/// Reihenfolge-Bühne: Höhe der Karte unter der Maus (Anteil der Bildschirmhöhe).
+const ORDER_ZOOM_HEIGHT: f32 = 0.62;
 /// Reihenfolge der Segmente im Farbrad (im Uhrzeigersinn ab oben; farblos zuletzt).
 const WHEEL_ORDER: &str = "WUBRGC";
 /// ✕-Knopf „Wirken abbrechen“ an der Karte: Breite und Abstand vor der Karte (Welteinheiten).

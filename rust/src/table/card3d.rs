@@ -69,6 +69,11 @@ const FLY_BOB_SPEED: f32 = 2.1;
 /// Ausgephaste Karte: Durchsichtigkeit (0 = deckend) und Größe des Phasing-Symbols.
 const PHASED_TRANSPARENCY: f32 = 0.6;
 const PHASED_ICON_SIZE: f32 = 0.3;
+/// Kapitelmarke einer Saga-Fähigkeit: Höhe (Welteinheiten) und Mitte (Pixel der 256 × 358
+/// großen Karte: links auf dem Bildfeld).
+const CHAPTER_MARK_SIZE: f32 = 0.24;
+const CHAPTER_MARK_X: f32 = 52.0;
+const CHAPTER_MARK_Y: f32 = 90.0;
 
 /// Durchsichtigkeit aller sichtbaren Teile unter `node` setzen (ausgephaste Karte).
 fn set_transparency_deep(node: &Gd<Node>, amount: f32) {
@@ -362,6 +367,8 @@ pub struct Card3D {
     fly_t: f32,
     /// Ausgephast (CR 702.26): halb durchsichtig, Phasing-Symbol in der Mitte.
     phased: Option<Gd<godot::classes::Sprite3D>>,
+    /// Kapitelmarke einer Saga-Fähigkeit auf dem Stack (Kapitel, Sprite).
+    chapter_mark: Option<(u32, Gd<godot::classes::Sprite3D>)>,
     /// Kachel-Textur für das Spielfeld (`placeholder::tile_face`), sonst None (dann der obere
     /// Teil der Vorderseite).
     tile_texture: Option<Gd<Texture2D>>,
@@ -461,6 +468,7 @@ impl IArea3D for Card3D {
             flies: false,
             fly_t: 0.0,
             phased: None,
+            chapter_mark: None,
             base,
         }
     }
@@ -844,6 +852,7 @@ impl Card3D {
     #[func]
     pub fn apply_card_state(&mut self, data: VarDictionary) {
         let def = CardDef::from_state(&data);
+        self.set_face_texture(Some(placeholder::card_face(&def)));
         self.apply_def(&def);
     }
 
@@ -924,6 +933,33 @@ impl Card3D {
         self.sync_shield();
         self.sync_keywords();
         self.sync_phased();
+        self.sync_chapter();
+    }
+
+    /// Kapitel-Fähigkeit einer Saga (`CardDef::chapter`): wie Arena eine Kapitelmarke mit
+    /// römischer Ziffer links auf dem Bildfeld des echten Kartenbilds; der Text des Kapitels steht
+    /// auf dem Feld über dem gedruckten Textfeld.
+    fn sync_chapter(&mut self) {
+        let want = self.def.chapter;
+        if self.chapter_mark.as_ref().map_or(0, |(n, _)| *n) == want {
+            return;
+        }
+        if let Some((_, mut old)) = self.chapter_mark.take() {
+            old.queue_free();
+        }
+        if want == 0 {
+            return;
+        }
+        let Some(mut visual) = self.visual.clone() else { return };
+        let mut mark = cost_symbols::chapter_icon(want, CHAPTER_MARK_SIZE);
+        mark.set_rotation(Vector3::new(-std::f32::consts::FRAC_PI_2, 0.0, 0.0));
+        mark.set_position(Vector3::new(
+            (CHAPTER_MARK_X / 256.0 - 0.5) * CARD_WIDTH,
+            CARD_THICKNESS * 0.5 + 0.004,
+            (CHAPTER_MARK_Y / 358.0 - 0.5) * CARD_HEIGHT,
+        ));
+        visual.add_child(&mark);
+        self.chapter_mark = Some((want, mark));
     }
 
     /// Ausgephaste Karte (CR 702.26) wie in Arena: bleibt an ihrem Platz (auch getappt), aber
@@ -1501,8 +1537,10 @@ impl Card3D {
         let area = (0.52 / LABEL_PIXEL) * (TEXT_BOX_HEIGHT * per_px);
         if custom {
             // eigener Text auf dem größeren Feld über dem gedruckten Textfeld: größere Schrift
-            let panel = (0.52 / LABEL_PIXEL) * (CARD_HEIGHT * TEXT_PANEL_HEIGHT * 0.8 / LABEL_PIXEL);
-            l.text.set_font_size(card_text::fit_font(&t.body, panel, 14, 56));
+            // (das Feld gehört dem Text allein: fast ganz füllen – fit_font rechnet für normale
+            // Textfelder mit viel Luft, auf der Bühne und im Stack soll er gut lesbar sein)
+            let panel = (0.52 / LABEL_PIXEL) * (CARD_HEIGHT * TEXT_PANEL_HEIGHT * 0.92 / LABEL_PIXEL) * CUSTOM_TEXT_FILL;
+            l.text.set_font_size(card_text::fit_font(&t.body, panel, 16, 60));
             l.text.set_position(px(128.0, (TEXT_PANEL_CENTER - 0.5) * CARD_HEIGHT));
         } else if t.custom_text {
             // eigener Text einer Bühne im gezeichneten Rahmen: größer, das Textfeld gehört ihm allein
@@ -1890,6 +1928,10 @@ impl Card3D {
             self.apply_shape();
         }
         self.apply_brightness();
+        // vor dem Aufbau übernommene Daten (Bühnen- und Stack-Kopien bekommen sie, bevor sie im
+        // Baum hängen): Phasing und Kapitelmarke jetzt anlegen
+        self.sync_phased();
+        self.sync_chapter();
     }
 }
 
@@ -2044,6 +2086,9 @@ const TEXT_WRAP_WIDTH: f32 = 0.52;
 const TEXT_PANEL_CENTER: f32 = 0.765;
 const TEXT_PANEL_WIDTH: f32 = 0.86;
 const TEXT_PANEL_HEIGHT: f32 = 0.27;
+/// Eigener Text auf dem Feld: wie viel dichter als in normalen Textfeldern er stehen darf
+/// (größere Schrift, siehe `card_text::fit_font`).
+const CUSTOM_TEXT_FILL: f32 = 1.45;
 
 /// Größe eines Schriftpunkts der Kartenbeschriftung (m).
 const LABEL_PIXEL: f32 = 0.0008;

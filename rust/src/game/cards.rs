@@ -112,6 +112,9 @@ pub struct CardDef {
     pub keywords: Vec<String>,
     /// Ausgephast (CR 702.26): bleibt halb durchsichtig mit Phasing-Symbol an seinem Platz.
     pub phased_out: bool,
+    /// Kapitel-Fähigkeit einer Saga auf dem Stack (CR 714.2): Nummer des Kapitels, 0 = keine;
+    /// das Kartenbild trägt dann eine Kapitelmarke mit römischer Ziffer.
+    pub chapter: u32,
 }
 
 impl CardDef {
@@ -188,6 +191,7 @@ impl CardDef {
                 })
                 .unwrap_or_default(),
             phased_out: card.get("phased_out").is_some_and(|v| v.booleanize()),
+            chapter: i("chapter").unwrap_or(0).clamp(0, 20) as u32,
         }
     }
 

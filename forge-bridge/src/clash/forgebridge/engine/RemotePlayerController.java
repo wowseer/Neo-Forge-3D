@@ -418,9 +418,10 @@ public class RemotePlayerController extends PlayerControllerAi {
             if (toPay.isPaid()) {
                 return true;
             }
-            // Pool-Mana, das einen Teil der Kosten bezahlen kann (je Farbe eine Option)
+            // Pool-Mana, das einen Teil der Kosten bezahlen kann (je Farbe eine Option); Codes wie
+            // in Forges Pool (ManaAtom: farblos = 1 << 5, sonst fehlte farbloses Pool-Mana)
             List<Byte> poolColors = new ArrayList<>();
-            for (byte color : forge.card.MagicColor.WUBRGC) {
+            for (byte color : forge.card.mana.ManaAtom.MANATYPES) {
                 if (me.getManaPool().getAmountOfColor(color) > 0 && toPay.isAnyPartPayableWith(color, me.getManaPool())) {
                     poolColors.add(color);
                 }

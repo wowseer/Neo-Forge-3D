@@ -16,13 +16,17 @@ use super::layers::CONTROL_LAYER;
 /// Höhe der Schiene und Maße des Griffs (Welteinheiten).
 const TRACK_HEIGHT: f32 = 0.05;
 const KNOB_SIZE: Vector2 = Vector2::new(0.42, 0.13);
+/// Zeichenreihenfolge (höchste der Szene: der Regler liegt immer im Vordergrund), Griff über
+/// der Schiene.
+const TRACK_PRIORITY: i32 = 100;
+const KNOB_PRIORITY: i32 = 101;
 /// Trefferhöhe (großzügiger als die sichtbare Schiene).
 const HIT_HEIGHT: f32 = 0.2;
 
 /// Schiene: abgerundeter dunkler Balken mit blauem Saum.
 const TRACK_SHADER: &str = r#"
 shader_type spatial;
-render_mode unshaded, blend_mix, cull_disabled, depth_draw_never, shadows_disabled;
+render_mode unshaded, blend_mix, cull_disabled, depth_draw_never, depth_test_disabled, shadows_disabled, fog_disabled;
 uniform vec2 size = vec2(3.0, 0.05);
 uniform float hover = 0.0;
 void fragment() {
@@ -40,7 +44,7 @@ void fragment() {
 /// Griff: Pille mit orangem Kern und Schein.
 const KNOB_SHADER: &str = r#"
 shader_type spatial;
-render_mode unshaded, blend_mix, cull_disabled, depth_draw_never, shadows_disabled;
+render_mode unshaded, blend_mix, cull_disabled, depth_draw_never, depth_test_disabled, shadows_disabled, fog_disabled;
 uniform vec2 size = vec2(0.42, 0.13);
 uniform float active = 0.0;
 void fragment() {
@@ -163,9 +167,9 @@ impl Slider3D {
         collision.set_shape(&shape);
         self.base_mut().add_child(&collision);
 
-        let (track, track_mat) = quad(TRACK_SHADER, Vector2::new(self.width, TRACK_HEIGHT), Vector2::splat(0.12));
+        let (track, track_mat) = quad(TRACK_SHADER, Vector2::new(self.width, TRACK_HEIGHT), Vector2::splat(0.12), TRACK_PRIORITY);
         self.base_mut().add_child(&track);
-        let (mut knob, knob_mat) = quad(KNOB_SHADER, KNOB_SIZE, Vector2::splat(0.16));
+        let (mut knob, knob_mat) = quad(KNOB_SHADER, KNOB_SIZE, Vector2::splat(0.16), KNOB_PRIORITY);
         knob.set_position(Vector3::new(0.0, 0.0, 0.01));
         self.base_mut().add_child(&knob);
         self.knob = Some(knob);
@@ -194,12 +198,14 @@ impl Slider3D {
 }
 
 /// Fläche mit Shader `code` in Größe `size` (+ Rand `margin` für den Schein), Vorderseite +Z.
-fn quad(code: &str, size: Vector2, margin: Vector2) -> (Gd<MeshInstance3D>, Gd<ShaderMaterial>) {
+fn quad(code: &str, size: Vector2, margin: Vector2, priority: i32) -> (Gd<MeshInstance3D>, Gd<ShaderMaterial>) {
     let shader = crate::table::shared::shader(code);
     let mut mat = ShaderMaterial::new_gd();
     mat.set_shader(&shader);
     mat.set_shader_parameter("size", &size.to_variant());
-    mat.set_render_priority(2);
+    // immer ganz vorn: ohne Tiefentest und nach allen anderen durchsichtigen Flächen
+    // (Karten im Cover-Flow, Schein, Pfeile, Effekte) gezeichnet
+    mat.set_render_priority(priority);
     let mut mesh = QuadMesh::new_gd();
     mesh.set_size(size + margin);
     mesh.set_material(&mat);
