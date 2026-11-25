@@ -66,6 +66,19 @@ const KEYWORD_ROW_BOTTOM_PX: f32 = 183.0;
 const FLY_LIFT: f32 = 0.09;
 const FLY_BOB: f32 = 0.02;
 const FLY_BOB_SPEED: f32 = 2.1;
+/// Ausgephaste Karte: Durchsichtigkeit (0 = deckend) und Größe des Phasing-Symbols.
+const PHASED_TRANSPARENCY: f32 = 0.6;
+const PHASED_ICON_SIZE: f32 = 0.3;
+
+/// Durchsichtigkeit aller sichtbaren Teile unter `node` setzen (ausgephaste Karte).
+fn set_transparency_deep(node: &Gd<Node>, amount: f32) {
+    for child in node.get_children().iter_shared() {
+        if let Ok(mut g) = child.clone().try_cast::<godot::classes::GeometryInstance3D>() {
+            g.set_transparency(amount);
+        }
+        set_transparency_deep(&child, amount);
+    }
+}
 const SHIELD_FLASH_TIME: f32 = 0.6;
 pub const CARD_HEIGHT: f32 = 0.88;
 pub const CARD_THICKNESS: f32 = 0.006;
@@ -347,6 +360,8 @@ pub struct Card3D {
     /// Kreatur mit Flugfähigkeit: schwebt als Kachel über dem Spielfeld; Zeit für das Auf und Ab.
     flies: bool,
     fly_t: f32,
+    /// Ausgephast (CR 702.26): halb durchsichtig, Phasing-Symbol in der Mitte.
+    phased: Option<Gd<godot::classes::Sprite3D>>,
     /// Kachel-Textur für das Spielfeld (`placeholder::tile_face`), sonst None (dann der obere
     /// Teil der Vorderseite).
     tile_texture: Option<Gd<Texture2D>>,
@@ -445,6 +460,7 @@ impl IArea3D for Card3D {
             keyword_row: None,
             flies: false,
             fly_t: 0.0,
+            phased: None,
             base,
         }
     }
@@ -907,6 +923,32 @@ impl Card3D {
         self.refresh_labels();
         self.sync_shield();
         self.sync_keywords();
+        self.sync_phased();
+    }
+
+    /// Ausgephaste Karte (CR 702.26) wie in Arena: bleibt an ihrem Platz (auch getappt), aber
+    /// halb durchsichtig, mit einem Phasing-Symbol in der Mitte; phast sie wieder ein, wird sie
+    /// normal.
+    fn sync_phased(&mut self) {
+        let want = self.def.phased_out;
+        if want == self.phased.is_some() {
+            return;
+        }
+        let Some(mut visual) = self.visual.clone() else { return };
+        if want {
+            let mut icon = cost_symbols::phasing_icon(PHASED_ICON_SIZE);
+            icon.set_rotation(Vector3::new(-std::f32::consts::FRAC_PI_2, 0.0, 0.0));
+            icon.set_position(Vector3::new(0.0, CARD_THICKNESS * 0.5 + 0.01, 0.0));
+            visual.add_child(&icon);
+            self.phased = Some(icon);
+        } else if let Some(mut icon) = self.phased.take() {
+            icon.queue_free();
+        }
+        set_transparency_deep(&visual.upcast(), if want { PHASED_TRANSPARENCY } else { 0.0 });
+        // das Phasing-Symbol selbst bleibt deckend
+        if let Some(icon) = self.phased.as_mut() {
+            icon.set_transparency(0.0);
+        }
     }
 
     /// Name der Karte (wie auf dem Kartenbild, ohne Übersetzung).

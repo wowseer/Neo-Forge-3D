@@ -110,6 +110,8 @@ pub struct CardDef {
     /// Schlüsselwörter der Karte, wie die Engine sie nennt („Flying“, „First Strike“, „Ward 2“ …):
     /// Symbole unten an der Kreaturen-Kachel ([`keyword_icons`]), fliegende Kreaturen schweben.
     pub keywords: Vec<String>,
+    /// Ausgephast (CR 702.26): bleibt halb durchsichtig mit Phasing-Symbol an seinem Platz.
+    pub phased_out: bool,
 }
 
 impl CardDef {
@@ -185,6 +187,7 @@ impl CardDef {
                         .collect()
                 })
                 .unwrap_or_default(),
+            phased_out: card.get("phased_out").is_some_and(|v| v.booleanize()),
         }
     }
 

@@ -33,6 +33,7 @@ use godot::prelude::*;
 
 use super::card_cutout::CardCutout;
 use super::hourglass::HourglassIcon;
+use super::mana::ManaType;
 use super::mana_view::ManaPoolView;
 use super::phase_timeline::PhaseTimeline;
 use super::seat_badge::SeatBadge;
@@ -543,6 +544,7 @@ impl TurnHud {
 
         if let Some(m) = self.player_mana.as_mut() {
             m.bind_mut().set_amounts(view.player_pool.clone());
+            m.bind_mut().set_restricted(&view.player_pool_restricted);
             m.bind_mut().set_clickable(&view.pool_clickable);
         }
         for (seat, badge) in [(1, self.opponent_badge.as_mut()), (0, self.player_badge.as_mut())] {
@@ -687,6 +689,9 @@ pub struct HudView {
     pub player_pool: PackedInt64Array,
     /// Je Manaart: beim Bezahlen anklickbar (schwebendes Mana einsetzen).
     pub pool_clickable: Vec<bool>,
+    /// Eingeschränktes Mana des Spielers (in `player_pool` mitgezählt): (Manaart, Menge, Art
+    /// `artifact` / `creature` / `other`), z. B. Mishra's Workshop.
+    pub player_pool_restricted: Vec<(ManaType, u32, String)>,
     pub choice: Option<HudChoice>,
     /// Ist Sitzplatz 0 / 1 gerade ein gültiges Ziel (Medaillon anklickbar)?
     pub targetable_seats: [bool; 2],

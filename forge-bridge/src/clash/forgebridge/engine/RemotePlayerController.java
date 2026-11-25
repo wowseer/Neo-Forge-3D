@@ -855,21 +855,15 @@ public class RemotePlayerController extends PlayerControllerAi {
         return String.join(", ", names);
     }
 
-    /** Reihenfolge, in der mehrere Kosten bezahlt werden ({@code OrderTriggers}). */
+    /**
+     * Reihenfolge, in der mehrere Kosten bezahlt werden: wie Forges menschlicher Controller (der
+     * nur im Modus „volle Kontrolle“ fragt) und wie Arena ohne Rückfrage in der Reihenfolge der
+     * Karte. Vorher kam hier ein Reihenfolge-Fenster mit Forges Rohtexten („T“, „2“,
+     * „Sacrifice CARDNAME“).
+     */
     @Override
     public List<forge.game.cost.CostPart> orderCosts(List<forge.game.cost.CostPart> costs) {
-        if (costs.size() <= 1) {
-            return costs;
-        }
-        List<String> names = new ArrayList<>();
-        costs.forEach(c -> names.add(c.toString()));
-        List<Integer> order = Decisions.order(getGame(), seat, names, "Reihenfolge der Kosten (erste zuerst)", null);
-        if (order == null) {
-            return super.orderCosts(costs);
-        }
-        List<forge.game.cost.CostPart> result = new ArrayList<>();
-        order.forEach(i -> result.add(costs.get(i)));
-        return result;
+        return costs;
     }
 
     /**
@@ -1522,6 +1516,8 @@ public class RemotePlayerController extends PlayerControllerAi {
         CardCollection bottom = new CardCollection();
         r.get(0).forEach(i -> top.add(list.get(i)));
         r.get(1).forEach(i -> bottom.add(list.get(i)));
+        // oben gelassene Karten kennt der Spieler (Hellsicht/Überwachen)
+        KnownLibrary.learn(getPlayer(), top);
         return ImmutablePair.of(top, bottom);
     }
 
@@ -1578,13 +1574,28 @@ public class RemotePlayerController extends PlayerControllerAi {
         List<Card> list = new ArrayList<>(cards);
         List<String> names = new ArrayList<>();
         list.forEach(c -> names.add(c.getName()));
-        List<Integer> order = Decisions.order(getGame(), seat, names,
-                "Reihenfolge wählen (" + destinationZone + ", erste zuerst)", list);
+        // In eine Bibliothek: die zuerst gewählte Karte liegt am Ende oben (bzw. ganz unten, wenn
+        // die Karten unter die Bibliothek kommen) – wie Forges eigener Controller. Forge legt die
+        // Karten einzeln in Listen-Reihenfolge ab, die zuletzt bewegte liegt also obenauf: die
+        // gewählte Reihenfolge wird deshalb umgedreht.
+        boolean deck = destinationZone.isDeck();
+        boolean top = orderedMoveToTopOfLibrary(destinationZone, source);
+        String title = !deck ? "Reihenfolge wählen (" + destinationZone + ", erste zuerst)"
+                : top ? "Reihenfolge wählen: die erste Karte kommt ganz nach oben"
+                : "Reihenfolge wählen: die erste Karte kommt ganz nach unten";
+        List<Integer> order = Decisions.order(getGame(), seat, names, title, list);
         if (order == null) {
             return super.orderMoveToZoneList(cards, destinationZone, source);
         }
         CardCollection result = new CardCollection();
         order.forEach(i -> result.add(list.get(i)));
+        if (deck) {
+            java.util.Collections.reverse(result);
+            if (top && destinationZone == ZoneType.Library) {
+                // der Spieler kennt jetzt die Reihenfolge oben auf seiner Bibliothek
+                KnownLibrary.learn(getPlayer(), result);
+            }
+        }
         return result;
     }
 

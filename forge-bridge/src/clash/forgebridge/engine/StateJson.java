@@ -39,12 +39,16 @@ final class StateJson {
             po.addProperty("name", p.getName());
             po.addProperty("life", p.getLife());
             po.addProperty("library", p.getCardsIn(ZoneType.Library).size());
-            // oberste Karte der Bibliothek, wenn der Betrachter sie sehen darf (Mystic Forge, Future
-            // Sight, Courser of Kruphix, Vizier of the Menagerie, Bolas's Citadel …: Forges
-            // MayLookAt bzw. aufgedeckt): die UI zeigt sie offen neben der Hand
-            Card top = libraryTopVisibleTo(game, p, viewer);
-            if (top != null) {
-                po.add("library_top", card(top));
+            // bekannte Karten oben auf der Bibliothek (von oben): die der Betrachter sehen darf
+            // (Mystic Forge, Future Sight, aufgedeckt …: Forges MayLookAt) oder schon kennt
+            // (selbst zurückgelegt wie bei Sensei's Divining Top, aus einer offenen Zone dorthin
+            // gelegt; KnownLibrary) – die UI zeigt sie offen; library_top = die oberste davon
+            java.util.List<Card> knownTop = KnownLibrary.knownTop(p, viewerPlayer(game, viewer));
+            if (!knownTop.isEmpty()) {
+                po.add("library_top", card(knownTop.get(0)));
+                JsonArray known = new JsonArray();
+                knownTop.forEach(c -> known.add(card(c)));
+                po.add("library_known", known);
             }
             po.addProperty("hand_count", p.getCardsIn(ZoneType.Hand).size());
             // Manapool: Menge je Farbe in der Reihenfolge W U B R G C
@@ -53,6 +57,10 @@ final class StateJson {
                 pool.add(p.getManaPool().getAmountOfColor(color));
             }
             po.add("mana_pool", pool);
+            // eingeschränktes Mana (z. B. Mishra's Workshop: nur für Artefakte), in mana_pool
+            // mitgezählt: je Farbe und Einschränkung {color (W U B R G C), amount, only
+            // (artifact / creature / other), text (Forges Einschränkung)}
+            po.add("mana_restricted", restrictedMana(p));
             // Spieler-Marken (Gift, Energie, Erfahrung …), CR 122.1
             po.add("counters", counters(p));
             if (i == viewer) {
@@ -96,21 +104,45 @@ final class StateJson {
     }
 
     /**
-     * Oberste Karte der Bibliothek von {@code owner}, wenn der Spieler am Sitzplatz {@code viewer}
-     * sie gerade sehen darf ({@code CardView.canBeShownTo}: in der Bibliothek nur mit einer
-     * Erlaubnis zum Ansehen bzw. Aufdecken); sonst null.
+     * Eingeschränktes Mana im Pool von {@code p}, zusammengefasst je Farbe und Einschränkung
+     * ({@code RestrictValid} der Manafähigkeit, z. B. „Spell.Artifact“): Art {@code artifact},
+     * wenn es nur für Artefakte gilt, {@code creature} nur für Kreaturen, sonst {@code other}.
      */
-    private static Card libraryTopVisibleTo(Game game, Player owner, int viewer) {
+    private static JsonArray restrictedMana(Player p) {
+        java.util.Map<String, int[]> counts = new java.util.LinkedHashMap<>();
+        java.util.Map<String, String[]> info = new java.util.HashMap<>();
+        for (forge.game.mana.Mana m : p.getManaPool()) {
+            if (!m.isRestricted() || m.getManaAbility() == null) {
+                continue;
+            }
+            String text = m.getManaAbility().getManaRestrictions();
+            String color = forge.card.MagicColor.toShortString(m.getColor());
+            if (color == null || color.isEmpty()) {
+                color = "C";
+            }
+            String lower = text == null ? "" : text.toLowerCase(java.util.Locale.ROOT);
+            String only = lower.contains("artifact") ? "artifact" : lower.contains("creature") ? "creature" : "other";
+            String key = color + "|" + text;
+            counts.computeIfAbsent(key, k -> new int[1])[0]++;
+            info.put(key, new String[] {color, only, text == null ? "" : text});
+        }
+        JsonArray arr = new JsonArray();
+        counts.forEach((key, n) -> {
+            String[] i = info.get(key);
+            JsonObject o = new JsonObject();
+            o.addProperty("color", i[0]);
+            o.addProperty("amount", n[0]);
+            o.addProperty("only", i[1]);
+            o.addProperty("text", i[2]);
+            arr.add(o);
+        });
+        return arr;
+    }
+
+    /** Spieler am Sitzplatz {@code viewer}, sonst null. */
+    private static Player viewerPlayer(Game game, int viewer) {
         java.util.List<Player> seats = game.getRegisteredPlayers();
-        if (viewer < 0 || viewer >= seats.size()) {
-            return null;
-        }
-        forge.game.card.CardCollectionView library = owner.getCardsIn(ZoneType.Library);
-        if (library.isEmpty()) {
-            return null;
-        }
-        Card top = library.get(0);
-        return top.getView().canBeShownTo(seats.get(viewer).getView()) ? top : null;
+        return viewer >= 0 && viewer < seats.size() ? seats.get(viewer) : null;
     }
 
     /**
@@ -198,6 +230,11 @@ final class StateJson {
             Player who = si.getActivatingPlayer();
             o.addProperty("controller", who == null ? -1 : indexOf(game, who));
             o.addProperty("text", si.getStackDescription());
+            // Kapitel einer Saga (CR 714.2): die UI zeigt die Kapitel-Ziffer auf der Karte
+            if (si.getSpellAbility() != null && si.getSpellAbility().isChapter()
+                    && si.getSpellAbility().getChapter() != null) {
+                o.addProperty("chapter", si.getSpellAbility().getChapter());
+            }
             if (si.isSpell() && src != null) {
                 o.add("card", card(src));
             } else if (src != null) {
@@ -294,7 +331,9 @@ final class StateJson {
 
     static JsonArray cards(Player p, ZoneType zone) {
         JsonArray arr = new JsonArray();
-        for (Card c : p.getCardsIn(zone)) {
+        // auch ausgephaste Permanents (CR 702.26): Forge filtert sie sonst heraus, die UI zeigt
+        // sie wie Arena halb durchsichtig an ihrem Platz (Feld phased_out)
+        for (Card c : p.getCardsIn(zone, false)) {
             if (isRulesPlumbing(c)) {
                 continue;
             }
@@ -315,6 +354,9 @@ final class StateJson {
 
     static JsonObject card(Card c) {
         JsonObject o = new JsonObject();
+        if (c.isPhasedOut()) {
+            o.addProperty("phased_out", true);
+        }
         o.addProperty("id", c.getId());
         o.addProperty("name", c.getName());
         o.addProperty("type", String.valueOf(c.getType()));

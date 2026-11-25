@@ -3895,6 +3895,20 @@ impl ForgeTable {
                 .and_then(|p| get_array(&p, "mana_pool"))
                 .map(|a| a.iter_shared().map(|v| v.try_to::<i64>().unwrap_or(0)).collect())
                 .unwrap_or_default(),
+            player_pool_restricted: player(0)
+                .and_then(|p| get_array(&p, "mana_restricted"))
+                .map(|a| {
+                    a.iter_shared()
+                        .filter_map(|v| v.try_to::<VarDictionary>().ok())
+                        .filter_map(|r| {
+                            let t = get_str(&r, "color").chars().next().and_then(|c| {
+                                if c == 'C' { Some(crate::game::mana::ManaType::Colorless) } else { crate::game::mana::ManaType::from_wubrg(c) }
+                            })?;
+                            Some((t, get_int(&r, "amount").max(0) as u32, get_str(&r, "only")))
+                        })
+                        .collect()
+                })
+                .unwrap_or_default(),
             choice,
             targetable_seats: seat_state(false),
             selected_seats: seat_state(true),
@@ -4226,8 +4240,9 @@ impl ForgeTable {
     /// - jede Karte, die gerade aus einer anderen Zone als Hand und Spielfeld spielbar ist –
     ///   Friedhof (Flashback …), Exil (Foretell, Abenteuer, „you may play“), Sideboard
     ///   (Companion), Bibliothek –, mit den Kosten der Spielweise aus dieser Zone;
-    /// - die oberste Karte der Bibliothek, wenn man sie sehen darf (`library_top`, z. B. Mystic
-    ///   Forge, Future Sight) – zum Ansehen; spielbar ist sie über den ersten Punkt;
+    /// - die bekannten Karten oben auf der Bibliothek (`library_known`: sichtbar wie bei Mystic
+    ///   Forge oder bekannt wie nach Sensei's Divining Top), von oben, mit Plakette „oben auf der
+    ///   Bibliothek“, „2. von oben“ … – zum Ansehen; spielbar sind sie über den ersten Punkt;
     /// - die **Commander** beider Seiten, solange sie in der Kommandozone sind (CR 903.6): die
     ///   Kommandozone hat keine eigene Fläche, der Commander ist nur auf der Hand seines Besitzers
     ///   zu sehen – auch beim Gegner offen –, mit den Kosten samt Commander-Steuer (CR 903.8,
@@ -4262,15 +4277,19 @@ impl ForgeTable {
                     wanted.push((seat, id, "Command".to_string(), get_str(&c, "cast_cost"), Some(c), false));
                 }
             }
-            // oberste Karte der Bibliothek, wenn man sie sehen darf (`library_top`: Mystic Forge,
-            // Future Sight, Courser of Kruphix …): offen neben der Hand; spielbar ist sie dann
-            // über `Priority.elsewhere` (oben schon drin, leuchtet), sonst nur zum Ansehen
-            if let Some(top) = p.get("library_top").and_then(|v| v.try_to::<VarDictionary>().ok()) {
-                if let Ok(id) = CardId::try_from(get_int(&top, "id")) {
-                    if !wanted.iter().any(|w| w.1 == id) {
-                        let cost = get_str(&top, "cost");
-                        wanted.push((seat, id, "LibraryTop".to_string(), cost, Some(top), false));
-                    }
+            // bekannte Karten oben auf der Bibliothek, von oben (`library_known`): die man sehen
+            // darf (Mystic Forge, Future Sight …) oder schon kennt (selbst zurückgelegt wie bei
+            // Sensei's Divining Top, aus einer offenen Zone dorthin gelegt) – offen neben der Hand;
+            // spielbar ist eine davon über `Priority.elsewhere` (oben schon drin, leuchtet)
+            let known: Vec<VarDictionary> = get_array(&p, "library_known")
+                .map(|a| a.iter_shared().filter_map(|c| c.try_to::<VarDictionary>().ok()).collect())
+                .or_else(|| p.get("library_top").and_then(|v| v.try_to::<VarDictionary>().ok()).map(|t| vec![t]))
+                .unwrap_or_default();
+            for (depth, top) in known.into_iter().enumerate() {
+                let Ok(id) = CardId::try_from(get_int(&top, "id")) else { continue };
+                if !wanted.iter().any(|w| w.1 == id) {
+                    let cost = get_str(&top, "cost");
+                    wanted.push((seat, id, format!("LibraryTop{}", depth + 1), cost, Some(top), false));
                 }
             }
         }
@@ -5209,7 +5228,24 @@ impl ForgeTable {
             }
         }
         d.set("source", source);
-        d.set("text", get_str(item, "text"));
+        // Kapitel einer Saga (CR 714.2): römische Ziffer vor dem Text, wie das Kapitelsymbol
+        let chapter = get_int(item, "chapter");
+        let text = get_str(item, "text");
+        if chapter > 0 {
+            // Forges Text beginnt schon mit den Kapiteln dieser Fähigkeit („I, II — …“) und endet
+            // mit einem internen Vermerk („[Added once: …]“): nur das ausgelöste Kapitel zeigen
+            let mut body = text.as_str();
+            if let Some((head, rest)) = body.split_once(" — ") {
+                if head.chars().all(|c| matches!(c, 'I' | 'V' | 'X' | ',' | ' ')) {
+                    body = rest;
+                }
+            }
+            let body = body.split(" [Added once").next().unwrap_or(body).trim();
+            d.set("text", format!("{} — {body}", roman(chapter)).as_str());
+            d.set("chapter", chapter);
+        } else {
+            d.set("text", text.as_str());
+        }
         d
     }
 
@@ -5612,6 +5648,11 @@ fn phase_index(phase: &str) -> i64 {
 /// „Spielstein“ (nur in der Kartenansicht – auf dem Tisch zeigt die Kachel das Bild frei).
 fn card_badges(data: &VarDictionary, ring_bearers: &[i64], token: bool) -> String {
     let mut lines: Vec<String> = Vec::new();
+    // Kapitel-Fähigkeit einer Saga auf dem Stack
+    let chapter = get_int(data, "chapter");
+    if chapter > 0 {
+        lines.push(trf!("Kapitel {}", "Chapter {}", roman(chapter)));
+    }
     if get_bool(data, "commander") {
         lines.push(tr!("Commander", "Commander").to_string());
     }
@@ -5660,6 +5701,12 @@ fn option_letter(o: &crate::rules::OptionText) -> Option<char> {
 }
 
 /// Plakette einer Handkarten-Kopie: aus welcher Zone sie gespielt wird.
+/// Römische Zahl (Kapitel einer Saga, 1 … 20).
+fn roman(n: i64) -> String {
+    const R: [&str; 20] = ["I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X", "XI", "XII", "XIII", "XIV", "XV", "XVI", "XVII", "XVIII", "XIX", "XX"];
+    usize::try_from(n - 1).ok().and_then(|i| R.get(i)).map_or_else(|| n.to_string(), |s| s.to_string())
+}
+
 fn zone_label(zone: &str) -> String {
     match zone {
         "Graveyard" => tr!("aus dem Friedhof", "from graveyard").to_string(),
@@ -5668,7 +5715,11 @@ fn zone_label(zone: &str) -> String {
         "Command" => tr!("aus der Kommandozone", "from command zone").to_string(),
         "Sideboard" => tr!("Begleiter", "Companion").to_string(),
         "Library" => tr!("aus der Bibliothek", "from library").to_string(),
-        "LibraryTop" => tr!("oben auf der Bibliothek", "top of library").to_string(),
+        "LibraryTop1" => tr!("oben auf der Bibliothek", "top of library").to_string(),
+        z if z.starts_with("LibraryTop") => {
+            let n = &z["LibraryTop".len()..];
+            trf!("{n}. von oben (Bibliothek)", "{n}. from the top (library)")
+        }
         other => other.to_string(),
     }
 }

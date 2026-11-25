@@ -289,6 +289,14 @@ fn draw_keyword(b: &mut godot::classes::CanvasItem, kind: &str, size: f32) {
             b.draw_colored_polygon(&poly(&[(0.5, 0.16), (0.8, 0.44), (0.5, 0.84), (0.2, 0.44)]), ink);
             b.draw_colored_polygon(&poly(&[(0.5, 0.3), (0.64, 0.44), (0.5, 0.64), (0.36, 0.44)]), dark);
         }
+        "phasing" => {
+            // Phasing (CR 702.26): gestrichelter Kreis mit Punkt
+            for i in 0..8 {
+                let a = i as f32 * TAU / 8.0;
+                b.draw_arc_ex(c, size * 0.24, a, a + TAU / 16.0, 6, ink).width(size * 0.06).antialiased(true).done();
+            }
+            b.draw_circle(c, size * 0.08, ink);
+        }
         "defender" => {
             // Mauer: drei Reihen Steine, versetzt
             let (x0, x1) = (0.2f32, 0.8f32);
@@ -308,6 +316,11 @@ fn draw_keyword(b: &mut godot::classes::CanvasItem, kind: &str, size: f32) {
             b.draw_arc_ex(c, size * 0.2, 0.0, TAU, 24, ink).width(size * 0.05).antialiased(true).done();
         }
     }
+}
+
+/// Phasing-Symbol (ausgephaste Karte) als `Sprite3D` (Durchmesser `size`).
+pub fn phasing_icon(size: f32) -> Gd<Sprite3D> {
+    symbol_sprite("&phasing", size)
 }
 
 /// Schlüsselwort-Symbol als `Sprite3D` (Durchmesser `size`, Fläche in der XY-Ebene, Vorderseite +Z).

@@ -28,6 +28,8 @@ final class EventForwarder {
 
     @Subscribe
     public void onEvent(GameEvent ev) {
+        // bekannte Karten oben auf den Bibliotheken (Zonenwechsel dorthin, Mischen)
+        KnownLibrary.onEvent(game, ev);
         JsonObject m = BridgeCore.message("event");
         m.addProperty("event", ev.getClass().getSimpleName());
         m.addProperty("text", String.valueOf(ev));

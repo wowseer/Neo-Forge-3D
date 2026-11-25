@@ -38,13 +38,16 @@ pub struct ManaPoolView {
     clickable: [bool; 6],
     /// Laufzeit für das Pulsieren der anklickbaren Kreise.
     time: f32,
+    /// Eingeschränktes Mana (in `amounts` mitgezählt): (Manaart, Menge, Art `artifact` /
+    /// `creature` / `other`) – eigene Kreise mit kleinem Symbol, wofür es gilt.
+    restricted: Vec<(ManaType, u32, String)>,
     base: Base<Control>,
 }
 
 #[godot_api]
 impl IControl for ManaPoolView {
     fn init(base: Base<Control>) -> Self {
-        Self { amounts: [0; 6], pop: [POP_TIME; 6], clickable: [false; 6], time: 0.0, base }
+        Self { amounts: [0; 6], pop: [POP_TIME; 6], clickable: [false; 6], time: 0.0, restricted: Vec::new(), base }
     }
 
     fn ready(&mut self) {
@@ -96,7 +99,17 @@ impl IControl for ManaPoolView {
                 let gold = Color::from_rgba(1.0, 0.85, 0.35, a);
                 self.base_mut().draw_arc_ex(c, RADIUS + 3.5, 0.0, TAU, 40, gold).width(3.0).antialiased(true).done();
             }
-            let n = self.amounts[t.index()];
+            let n = self.free(t);
+            if n > 1 {
+                self.draw_count(c + Vector2::new(RADIUS * 0.72, RADIUS * 0.72), n);
+            }
+        }
+        // eingeschränktes Mana dahinter: eigener Kreis mit Symbol, wofür es gilt
+        let first = self.shown().len();
+        for (j, (t, n, only)) in self.restricted.clone().into_iter().enumerate() {
+            let c = Self::center(first + j);
+            self.draw_mana(t, c, RADIUS);
+            self.draw_restriction(c + Vector2::new(-RADIUS * 0.72, RADIUS * 0.72), &only);
             if n > 1 {
                 self.draw_count(c + Vector2::new(RADIUS * 0.72, RADIUS * 0.72), n);
             }
@@ -128,10 +141,7 @@ impl ManaPoolView {
             }
         }
         self.amounts = next;
-        let count = next.iter().filter(|a| **a > 0).count() as f32;
-        let width = if count > 0.0 { count * 2.0 * RADIUS + (count - 1.0) * GAP + 4.0 } else { 0.0 };
-        self.base_mut().set_custom_minimum_size(Vector2::new(width, 2.0 * RADIUS + 4.0));
-        self.base_mut().queue_redraw();
+        self.update_size();
     }
 }
 
@@ -158,9 +168,67 @@ impl ManaPoolView {
         b.queue_redraw();
     }
 
-    /// Manaarten mit Mana im Pool, in Anzeigereihenfolge.
+    /// Eingeschränktes Mana setzen (in den Mengen von [method set_amounts] mitgezählt): es
+    /// bekommt eigene Kreise mit einem kleinen Symbol (Zahnrad = nur für Artefakte, Kralle = nur
+    /// für Kreaturen, Schloss = sonst eingeschränkt), z. B. das übrige Mana von Mishra's Workshop.
+    pub fn set_restricted(&mut self, restricted: &[(ManaType, u32, String)]) {
+        let next: Vec<(ManaType, u32, String)> = restricted.iter().filter(|r| r.1 > 0).cloned().collect();
+        if next == self.restricted {
+            return;
+        }
+        self.restricted = next;
+        self.update_size();
+    }
+
+    /// Freies (nicht eingeschränktes) Mana der Art `t`.
+    fn free(&self, t: ManaType) -> u32 {
+        let bound: u32 = self.restricted.iter().filter(|r| r.0 == t).map(|r| r.1).sum();
+        self.amounts[t.index()].saturating_sub(bound)
+    }
+
+    /// Breite an die Zahl der Kreise anpassen und neu zeichnen.
+    fn update_size(&mut self) {
+        let count = (self.shown().len() + self.restricted.len()) as f32;
+        let width = if count > 0.0 { count * 2.0 * RADIUS + (count - 1.0) * GAP + 4.0 } else { 0.0 };
+        self.base_mut().set_custom_minimum_size(Vector2::new(width, 2.0 * RADIUS + 4.0));
+        self.base_mut().queue_redraw();
+    }
+
+    /// Kleines Symbol unten links an einem Kreis: wofür das Mana gilt.
+    fn draw_restriction(&mut self, c: Vector2, only: &str) {
+        let r = 8.0;
+        let ink = Color::from_rgb(0.95, 0.85, 0.55);
+        let mut b = self.base_mut();
+        b.draw_circle(c, r, Color::from_rgba(0.05, 0.05, 0.07, 0.95));
+        b.draw_arc_ex(c, r, 0.0, TAU, 20, RIM).width(1.2).antialiased(true).done();
+        match only {
+            // Zahnrad (Artefakt): Ring mit sechs Zähnen
+            "artifact" => {
+                for i in 0..6 {
+                    let a = i as f32 * TAU / 6.0;
+                    let d = Vector2::new(a.cos(), a.sin());
+                    b.draw_line_ex(c + d * 2.5, c + d * 5.6, ink).width(2.2).antialiased(true).done();
+                }
+                b.draw_circle(c, 3.4, ink);
+                b.draw_circle(c, 1.4, Color::from_rgb(0.05, 0.05, 0.07));
+            }
+            // Kralle (Kreatur): drei Striche
+            "creature" => {
+                for dx in [-2.6f32, 0.0, 2.6] {
+                    b.draw_line_ex(c + Vector2::new(dx - 1.0, -4.0), c + Vector2::new(dx + 1.0, 4.0), ink).width(1.6).antialiased(true).done();
+                }
+            }
+            // Schloss (sonst eingeschränkt)
+            _ => {
+                b.draw_arc_ex(c + Vector2::new(0.0, -1.0), 2.6, PI, TAU, 10, ink).width(1.4).antialiased(true).done();
+                b.draw_rect(Rect2::new(c + Vector2::new(-3.5, -1.0), Vector2::new(7.0, 5.0)), ink);
+            }
+        }
+    }
+
+    /// Manaarten mit freiem Mana im Pool, in Anzeigereihenfolge.
     fn shown(&self) -> Vec<ManaType> {
-        ManaType::ALL.into_iter().filter(|t| self.amounts[t.index()] > 0).collect()
+        ManaType::ALL.into_iter().filter(|t| self.free(*t) > 0).collect()
     }
 
     /// Mitte des `k`-ten Kreises.
