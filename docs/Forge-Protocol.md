@@ -339,7 +339,9 @@ and tokens; for the image the bridge picks a printing with a normal frame, see D
 without a normal-frame printing: path of the image crop `<SET>/<Name>.artcrop.jpg`, Scryfall
 `art_crop`), `face_down: true` (face down, CR 708: empty name, values of the face-down side),
 `face` (for double-faced, modal and flip cards: 0 = front, 1 = back/flipped) with `other_face`
-`{name, type}` (only face up), `counters` (counters like `CardObj.counters` in forge-rules-rs:
+`{name, type, image, cost, text, colors, power, toughness, loyalty, defense}` (only face up; the
+printed values of the other face, so the UI can show it next to the card like Arena; `image` = path
+of that face's card image, may be absent), `counters` (counters like `CardObj.counters` in forge-rules-rs:
 name → count, names = Forge's `CounterEnumType`, e.g. `{"P1P1": 2, "LOYALTY": 4}`).
 
 Players additionally: `mana_pool` = amount of floating mana per colour in the order W U B R G C;

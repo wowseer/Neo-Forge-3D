@@ -10,6 +10,10 @@
 //! Die Tafel wird mit Godot-Controls in einem eigenen `SubViewport` gesetzt (sauberer
 //! Zeilenumbruch, fett/kursiv) und als Bild auf eine Fläche in der 3D-Szene gelegt. Der
 //! Inspektor steht in festem Abstand vor der Kamera und folgt ihr; nicht anklickbar.
+//!
+//! Doppelseitige Karten (transformierbar, modal, Flip; CR 711, 712) zeigen wie in Arena beide
+//! Seiten nebeneinander: die angezeigte Seite außen, die andere Seite daneben zur Bildmitte hin,
+//! dahinter die Tafel. Bei Handkarten (die sich selbst groß zeigen) erscheint nur die andere Seite.
 
 use godot::classes::base_material_3d::{ShadingMode, TextureParam, Transparency};
 use godot::classes::control::{LayoutPreset, MouseFilter};
@@ -58,6 +62,8 @@ pub struct InspectorEntry {
 pub struct CardInspector {
     /// true = Karte am rechten Bildschirmrand (Tafel links davon), false = links.
     right_side: bool,
+    /// Zahl der gezeigten Kartenkopien (1, mit anderer Seite 2); die Tafel steht dahinter.
+    shown_cards: usize,
     content: Option<Gd<Node3D>>,
     /// Tafel: Layout im SubViewport und die Fläche, die es zeigt.
     viewport: Option<Gd<SubViewport>>,
@@ -69,7 +75,7 @@ pub struct CardInspector {
 #[godot_api]
 impl INode3D for CardInspector {
     fn init(base: Base<Node3D>) -> Self {
-        Self { right_side: false, content: None, viewport: None, panel: None, quad: None, base }
+        Self { right_side: false, shown_cards: 1, content: None, viewport: None, panel: None, quad: None, base }
     }
 
     fn process(&mut self, _delta: f64) {
@@ -115,28 +121,40 @@ impl CardInspector {
 }
 
 impl CardInspector {
-    /// Karte `def` zeigen; `right_side` = am rechten Bildschirmrand (sonst links); Tafel mit
-    /// `abilities` (Fähigkeiten) und `buffs` (Veränderungen) – beide leer = keine Tafel.
-    pub fn show(&mut self, def: &CardDef, abilities: &[InspectorEntry], buffs: &[InspectorEntry], right_side: bool) {
+    /// Karten `faces` zeigen (die erste außen am Bildschirmrand, weitere – die andere Seite
+    /// doppelseitiger Karten – daneben zur Bildmitte hin); `right_side` = am rechten
+    /// Bildschirmrand (sonst links); Tafel mit `abilities` (Fähigkeiten) und `buffs`
+    /// (Veränderungen) – beide leer = keine Tafel.
+    pub fn show(&mut self, faces: &[CardDef], abilities: &[InspectorEntry], buffs: &[InspectorEntry], right_side: bool) {
         self.hide_card();
+        if faces.is_empty() {
+            return;
+        }
         self.right_side = right_side;
+        self.shown_cards = faces.len();
         let mut content = Node3D::new_alloc();
         content.set_name("Content");
 
-        // Kartenkopie: hell, stehend zur Kamera (Vorderseite der Karte +Y → zur Kamera)
-        let mut copy = Card3D::new_alloc();
-        {
-            let mut c = copy.bind_mut();
-            c.set_face_texture(Some(placeholder::card_face(def)));
-            c.apply_def(def);
-            c.set_bright(true);
-        }
+        // Kartenkopien: hell, stehend zur Kamera (Vorderseite der Karte +Y → zur Kamera)
         let scale = CARD_SHOWN_HEIGHT / CARD_HEIGHT;
-        copy.set_transform(Transform3D::new(
-            Basis::from_axis_angle(Vector3::RIGHT, std::f32::consts::FRAC_PI_2).scaled(Vector3::splat(scale)),
-            Vector3::ZERO,
-        ));
-        content.add_child(&copy);
+        let card_w = CARD_WIDTH * scale;
+        let dir = if right_side { -1.0 } else { 1.0 };
+        let mut copies = Vec::new();
+        for (i, def) in faces.iter().enumerate() {
+            let mut copy = Card3D::new_alloc();
+            {
+                let mut c = copy.bind_mut();
+                c.set_face_texture(Some(placeholder::card_face(def)));
+                c.apply_def(def);
+                c.set_bright(true);
+            }
+            copy.set_transform(Transform3D::new(
+                Basis::from_axis_angle(Vector3::RIGHT, std::f32::consts::FRAC_PI_2).scaled(Vector3::splat(scale)),
+                Vector3::new(dir * i as f32 * (card_w + GAP), 0.0, 0.0),
+            ));
+            content.add_child(&copy);
+            copies.push(copy);
+        }
 
         if !abilities.is_empty() || !buffs.is_empty() {
             let (viewport, panel) = build_panel(abilities, buffs);
@@ -160,7 +178,9 @@ impl CardInspector {
         }
         self.base_mut().add_child(&content);
         // erst jetzt im Baum (Kollision wird beim Aufbau gesetzt): nicht anklickbar machen
-        copy.set_collision_layer(0);
+        for copy in copies.iter_mut() {
+            copy.set_collision_layer(0);
+        }
         self.content = Some(content);
     }
 
@@ -181,7 +201,8 @@ impl CardInspector {
             }
         }
         let dir = if self.right_side { -1.0 } else { 1.0 };
-        let x = dir * (card_w * 0.5 + GAP + size.x * 0.5);
+        let cards = self.shown_cards.max(1) as f32;
+        let x = dir * (card_w * 0.5 + (cards - 1.0) * (card_w + GAP) + GAP + size.x * 0.5);
         let y = CARD_SHOWN_HEIGHT * 0.5 - size.y * 0.5;
         quad.set_position(Vector3::new(x, y, 0.004));
     }

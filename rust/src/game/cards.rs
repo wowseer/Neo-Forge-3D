@@ -31,13 +31,15 @@ pub enum CardKind {
 
 impl CardKind {
     /// Kategorie aus einer englischen Typzeile (z. B. „Artifact Creature — Golem“). Reihenfolge
-    /// nach Vorrang: Land vor Kreatur (Artefaktländer), Kreatur vor Artefakt/Verzauberung.
+    /// nach Vorrang: Kreatur vor Land (Länder, die Kreaturen sind oder werden – Dryad Arbor,
+    /// belebte Länder –, liegen wie in Arena bei den Kreaturen), Land vor Artefakt
+    /// (Artefaktländer), Kreatur vor Artefakt/Verzauberung.
     pub fn from_type_line(ty: &str) -> CardKind {
         let has = |w: &str| ty.split(|c: char| !c.is_alphanumeric()).any(|t| t == w);
-        if has("Land") {
-            CardKind::Land
-        } else if has("Creature") {
+        if has("Creature") {
             CardKind::Creature
+        } else if has("Land") {
+            CardKind::Land
         } else if has("Planeswalker") {
             CardKind::Planeswalker
         } else if has("Battle") {
@@ -56,6 +58,11 @@ impl CardKind {
             CardKind::Artifact
         }
     }
+}
+
+/// Steht „Land“ als Typ in der Typzeile (auch bei Länder-Kreaturen, CR 305)?
+pub fn is_land_type(ty: &str) -> bool {
+    ty.split(|c: char| !c.is_alphanumeric()).any(|t| t == "Land")
 }
 
 /// Alles, was das Kartenbild braucht.
@@ -133,7 +140,8 @@ impl CardDef {
         let type_line = s("type").replace(" - ", " — ");
         let kind = CardKind::from_type_line(&type_line);
         let colors: Vec<ManaType> = s("colors").chars().filter_map(ManaType::from_wubrg).filter(|t| t.is_colored()).collect();
-        let produces = if kind == CardKind::Land {
+        // auch für Länder, die gerade Kreaturen sind (Rahmenfarbe, Manafarbe)
+        let produces = if is_land_type(&type_line) {
             [
                 ("Plains", ManaType::White),
                 ("Island", ManaType::Blue),
@@ -203,7 +211,7 @@ impl CardDef {
     /// Rahmenfarbe: Länder nach ihrer Manafarbe, sonst die Kartenfarbe (mehrfarbig = Gold,
     /// farblos = Grau).
     pub fn frame_color(&self) -> Color {
-        if self.kind == CardKind::Land {
+        if self.kind == CardKind::Land || (is_land_type(&self.type_line) && self.colors.is_empty()) {
             return self.produces.color();
         }
         match self.colors.as_slice() {
@@ -328,6 +336,8 @@ mod tests {
     fn kinds_from_type_lines() {
         assert_eq!(CardKind::from_type_line("Artifact Creature — Golem"), CardKind::Creature);
         assert_eq!(CardKind::from_type_line("Artifact Land"), CardKind::Land);
+        assert_eq!(CardKind::from_type_line("Land Creature — Forest Dryad"), CardKind::Creature);
+        assert!(is_land_type("Land Creature — Forest Dryad"));
         assert_eq!(CardKind::from_type_line("Legendary Planeswalker — Chandra"), CardKind::Planeswalker);
         assert_eq!(CardKind::from_type_line("Enchantment — Aura"), CardKind::Aura);
         assert_eq!(CardKind::from_type_line("Artifact — Equipment"), CardKind::Equipment);

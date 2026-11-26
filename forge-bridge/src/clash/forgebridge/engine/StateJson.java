@@ -473,6 +473,30 @@ final class StateJson {
                 JsonObject oo = new JsonObject();
                 oo.addProperty("name", other.getName());
                 oo.addProperty("type", String.valueOf(other.getType()));
+                // genug für ein eigenes Kartenbild der anderen Seite (Kartenansicht wie in Arena)
+                String img = CardImages.faceImage(c, other.getName());
+                if (!img.isEmpty()) {
+                    oo.addProperty("image", img);
+                }
+                oo.addProperty("cost", other.getManaCost() == null || other.getManaCost().isNoCost() ? "" : other.getManaCost().getShortString());
+                if (other.getType().isCreature()) {
+                    oo.addProperty("power", other.getBasePower());
+                    oo.addProperty("toughness", other.getBaseToughness());
+                }
+                Integer loyalty = other.getType().isPlaneswalker() ? printed(other.getBaseLoyalty()) : null;
+                if (loyalty != null) oo.addProperty("loyalty", loyalty);
+                Integer defense = other.getType().isBattle() ? printed(other.getBaseDefense()) : null;
+                if (defense != null) oo.addProperty("defense", defense);
+                forge.card.ColorSet oc = other.getColor();
+                StringBuilder ocs = new StringBuilder();
+                if (oc.hasWhite()) ocs.append('W');
+                if (oc.hasBlue()) ocs.append('U');
+                if (oc.hasBlack()) ocs.append('B');
+                if (oc.hasRed()) ocs.append('R');
+                if (oc.hasGreen()) ocs.append('G');
+                oo.addProperty("colors", ocs.toString());
+                String otext = other.getOracleText();
+                oo.addProperty("text", otext == null ? "" : otext.trim());
                 o.add("other_face", oo);
             }
         }

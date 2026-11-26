@@ -4832,13 +4832,21 @@ impl ForgeTable {
             return;
         };
         let def = card.bind().def().clone();
-        // Handkarten (eigene Hand, Fächer der Bühnen) zeigen sich beim Hovern selbst groß
-        let in_hand = card.bind().get_zone().is_some_and(|z| z.bind().is_hand());
-        if def.name == "?" || def.name.is_empty() || (in_hand && self.inspect_override.is_none()) {
+        let data = self.forge_id(&card).and_then(|fid| self.card_data(fid));
+        // andere Seite doppelseitiger Karten (CR 711, 712): wie in Arena neben der Karte
+        let other = data.as_ref().and_then(other_face_def);
+        // Handkarten (eigene Hand, Fächer der Bühnen) zeigen sich beim Hovern selbst groß –
+        // doppelseitige zeigen daneben nur ihre andere Seite
+        let in_hand = card.bind().get_zone().is_some_and(|z| z.bind().is_hand()) && self.inspect_override.is_none();
+        if def.name == "?" || def.name.is_empty() || (in_hand && other.is_none()) {
             inspector.bind_mut().hide_card();
             return;
         }
-        let data = self.forge_id(&card).and_then(|fid| self.card_data(fid));
+        if in_hand {
+            let right_side = self.screen_right_of(&card);
+            inspector.bind_mut().show(&other.into_iter().collect::<Vec<_>>(), &[], &[], right_side);
+            return;
+        }
         let mut abilities = Vec::new();
         let mut buffs = Vec::new();
         if let Some(data) = data.as_ref() {
@@ -4872,14 +4880,19 @@ impl ForgeTable {
                 }
             }
         }
-        // Seite gegenüber der Karte: Karte rechts im Bild → Ansicht links und umgekehrt
-        let right_side = self
-            .base()
+        let right_side = self.screen_right_of(&card);
+        let faces: Vec<CardDef> = std::iter::once(def).chain(other).collect();
+        inspector.bind_mut().show(&faces, &abilities, &buffs, right_side);
+    }
+
+    /// Seite der Kartenansicht gegenüber der Karte: Karte links im Bild → Ansicht rechts (true)
+    /// und umgekehrt.
+    fn screen_right_of(&self, card: &Gd<Card3D>) -> bool {
+        self.base()
             .get_viewport()
             .and_then(|v| v.get_camera_3d().map(|cam| (cam, v.get_visible_rect().size)))
             .map(|(cam, size)| cam.unproject_position(card.get_global_position()).x < size.x * 0.5)
-            .unwrap_or(false);
-        inspector.bind_mut().show(&def, &abilities, &buffs, right_side);
+            .unwrap_or(false)
     }
 
     /// Neue Stack-Einträge: gewirkte Karte bzw. Quelle der Fähigkeit leuchtet orange auf.
@@ -5693,6 +5706,18 @@ fn card_badges(data: &VarDictionary, ring_bearers: &[i64], token: bool) -> Strin
     lines.join("\n")
 }
 
+/// Kartenbild der anderen Seite einer doppelseitigen Karte (`other_face` im Zustand, mit den
+/// aufgedruckten Werten dieser Seite), sonst None.
+fn other_face_def(data: &VarDictionary) -> Option<CardDef> {
+    let other = data.get("other_face").and_then(|v| v.try_to::<VarDictionary>().ok())?;
+    if get_str(&other, "name").is_empty() {
+        return None;
+    }
+    let mut def = CardDef::from_state(&other);
+    def.face = 1 - (get_int(data, "face").clamp(0, 1) as u8);
+    Some(def)
+}
+
 /// Leuchten des Rahmens der Kopien von Karten aus anderen Zonen (weiß).
 const ELSEWHERE_GLOW: Color = Color::from_rgb(1.0, 1.0, 1.0);
 
@@ -5775,6 +5800,9 @@ fn counter_list(d: &VarDictionary) -> Vec<(String, u32)> {
     out
 }
 
+/// Gehört die Karte in die Länder-Reihe? Länder, die (gerade) Kreaturen sind, liegen bei den
+/// Kreaturen ([`CardKind::from_type_line`]); ihre Auren wandern mit (angelegte Karten folgen
+/// der Zone ihres Trägers).
 fn is_land(card: &VarDictionary) -> bool {
     CardKind::from_type_line(&get_str(card, "type")) == CardKind::Land
 }
